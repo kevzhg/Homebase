@@ -1,200 +1,274 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import cors from 'cors';
-import * as fs from 'fs';
-import * as path from 'path';
+import { MongoClient, ObjectId, Collection } from 'mongodb';
+import 'dotenv/config';
+
+// Types local to the server (aligned with frontend types but isolated here)
+interface WorkoutSetEntry {
+    setNumber: number;
+    weight?: number;
+    reps?: number | string;
+    completed: boolean;
+    completedAt?: string;
+}
+
+interface WorkoutExerciseEntry {
+    exerciseId: string;
+    name: string;
+    notes?: string;
+    elapsedMs?: number;
+    sets: WorkoutSetEntry[];
+}
+
+interface WorkoutDoc {
+    _id?: ObjectId;
+    date: string;
+    type: string;
+    durationMinutes: number;
+    programName?: string;
+    exercises: WorkoutExerciseEntry[];
+    notes?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
+interface MealDoc {
+    _id?: ObjectId;
+    date: string;
+    type: string;
+    name: string;
+    calories?: number;
+    protein?: number;
+    description?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
+interface WeightDoc {
+    _id?: ObjectId;
+    date: string;
+    weight: number;
+    unit: string;
+    notes?: string;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
 
 const app = express();
-const PORT = 3001;
-const DB_PATH = path.join(__dirname, '..', 'data', 'db.json');
+const PORT = Number(process.env.PORT || 8000);
+
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const MONGO_DB = process.env.MONGODB_DB || 'workoutnmeal';
+const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_WORKOUTS || 'workouts';
+const MONGO_COLLECTION_MEALS = process.env.MONGODB_COLLECTION_MEALS || 'meals';
+const MONGO_COLLECTION_WEIGHT = process.env.MONGODB_COLLECTION_WEIGHT || 'weight';
+
+const client = new MongoClient(MONGO_URI);
+let workoutsCollection: Collection<WorkoutDoc> | null = null;
+let mealsCollection: Collection<MealDoc> | null = null;
+let weightCollection: Collection<WeightDoc> | null = null;
+
+async function connectDb(): Promise<void> {
+    if (!workoutsCollection) {
+        await client.connect();
+        const db = client.db(MONGO_DB);
+        workoutsCollection = db.collection<WorkoutDoc>(MONGO_COLLECTION);
+        mealsCollection = db.collection<MealDoc>(MONGO_COLLECTION_MEALS);
+        weightCollection = db.collection<WeightDoc>(MONGO_COLLECTION_WEIGHT);
+        await workoutsCollection.createIndex({ date: 1 });
+        await workoutsCollection.createIndex({ createdAt: -1 });
+        await mealsCollection!.createIndex({ date: 1 });
+        await weightCollection!.createIndex({ date: 1 });
+    }
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(async (_req, res, next) => {
+    try {
+        await connectDb();
+        next();
+    } catch (error) {
+        console.error('Mongo connection error:', error);
+        res.status(500).json({ message: 'Failed to connect to database' });
+    }
+});
 
-// Types
-interface Workout {
-  id: string;
-  date: string;
-  type: string;
-  duration: number;
-  exercises: string;
-  notes: string;
-  createdAt: string;
+// Helpers
+function toResponse(doc: WorkoutDoc) {
+    const { _id, ...rest } = doc;
+    return { id: _id?.toString(), ...rest };
 }
 
-interface Meal {
-  id: string;
-  date: string;
-  type: string;
-  name: string;
-  calories?: number;
-  protein?: number;
-  description: string;
-  createdAt: string;
+function mealToResponse(doc: MealDoc) {
+    const { _id, ...rest } = doc;
+    return { id: _id?.toString(), ...rest };
 }
 
-interface WeightEntry {
-  id: string;
-  date: string;
-  weight: number;
-  unit: string;
-  notes: string;
-  createdAt: string;
+function weightToResponse(doc: WeightDoc) {
+    const { _id, ...rest } = doc;
+    return { id: _id?.toString(), ...rest };
 }
 
-interface Database {
-  workouts: Workout[];
-  meals: Meal[];
-  weightEntries: WeightEntry[];
-  settings: {
-    defaultWeightUnit: string;
-  };
-}
-
-// Helper functions
-function readDB(): Database {
-  try {
-    const data = fs.readFileSync(DB_PATH, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return {
-      workouts: [],
-      meals: [],
-      weightEntries: [],
-      settings: { defaultWeightUnit: 'lbs' }
-    };
-  }
-}
-
-function writeDB(data: Database): void {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-}
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+function parseId(id: string): ObjectId | null {
+    try {
+        return new ObjectId(id);
+    } catch {
+        return null;
+    }
 }
 
 // Routes
-
-// Get all data
-app.get('/api/data', (_req: Request, res: Response) => {
-  const db = readDB();
-  res.json(db);
+app.get('/api/workouts', async (_req, res) => {
+    if (!workoutsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await workoutsCollection.find().sort({ createdAt: -1 }).toArray();
+    res.json(docs.map(toResponse));
 });
 
-// === WORKOUTS ===
-app.get('/api/workouts', (_req: Request, res: Response) => {
-  const db = readDB();
-  res.json(db.workouts);
+app.get('/api/workouts/:id', async (req, res) => {
+    if (!workoutsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const doc = await workoutsCollection.findOne({ _id: objId });
+    if (!doc) return res.status(404).json({ message: 'Workout not found' });
+    res.json(toResponse(doc));
 });
 
-app.post('/api/workouts', (req: Request, res: Response) => {
-  const db = readDB();
-  const workout: Workout = {
-    ...req.body,
-    id: generateId(),
-    createdAt: new Date().toISOString()
-  };
-  db.workouts.push(workout);
-  db.workouts.sort((a, b) => b.date.localeCompare(a.date));
-  writeDB(db);
-  res.status(201).json(workout);
+app.post('/api/workouts', async (req, res) => {
+    if (!workoutsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const workout = req.body as WorkoutDoc;
+    const now = new Date();
+    const doc: WorkoutDoc = {
+        ...workout,
+        createdAt: now,
+        updatedAt: now
+    };
+
+    const result = await workoutsCollection.insertOne(doc);
+    const inserted = await workoutsCollection.findOne({ _id: result.insertedId });
+    res.status(201).json(inserted ? toResponse(inserted) : { id: result.insertedId.toString(), ...doc });
 });
 
-app.delete('/api/workouts/:id', (req: Request, res: Response) => {
-  const db = readDB();
-  const index = db.workouts.findIndex(w => w.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Workout not found' });
-  }
-  db.workouts.splice(index, 1);
-  writeDB(db);
-  res.status(204).send();
+app.put('/api/workouts/:id', async (req, res) => {
+    if (!workoutsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const updates = req.body as Partial<WorkoutDoc>;
+    updates.updatedAt = new Date();
+
+    const result = await workoutsCollection.findOneAndUpdate(
+        { _id: objId },
+        { $set: updates },
+        { returnDocument: 'after' }
+    );
+
+    if (!result.value) return res.status(404).json({ message: 'Workout not found' });
+    res.json(toResponse(result.value));
 });
 
-// === MEALS ===
-app.get('/api/meals', (_req: Request, res: Response) => {
-  const db = readDB();
-  res.json(db.meals);
+app.delete('/api/workouts/:id', async (req, res) => {
+    if (!workoutsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const result = await workoutsCollection.deleteOne({ _id: objId });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Workout not found' });
+    res.status(204).send();
 });
 
-app.post('/api/meals', (req: Request, res: Response) => {
-  const db = readDB();
-  const meal: Meal = {
-    ...req.body,
-    id: generateId(),
-    createdAt: new Date().toISOString()
-  };
-  db.meals.push(meal);
-  db.meals.sort((a, b) => b.date.localeCompare(a.date));
-  writeDB(db);
-  res.status(201).json(meal);
+// Meals
+app.get('/api/meals', async (_req, res) => {
+    if (!mealsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await mealsCollection.find().sort({ date: -1 }).toArray();
+    res.json(docs.map(mealToResponse));
 });
 
-app.delete('/api/meals/:id', (req: Request, res: Response) => {
-  const db = readDB();
-  const index = db.meals.findIndex(m => m.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Meal not found' });
-  }
-  db.meals.splice(index, 1);
-  writeDB(db);
-  res.status(204).send();
+app.post('/api/meals', async (req, res) => {
+    if (!mealsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const meal = req.body as MealDoc;
+    const now = new Date();
+    const doc: MealDoc = { ...meal, createdAt: now, updatedAt: now };
+    const result = await mealsCollection.insertOne(doc);
+    const inserted = await mealsCollection.findOne({ _id: result.insertedId });
+    res.status(201).json(inserted ? mealToResponse(inserted) : { id: result.insertedId.toString(), ...doc });
 });
 
-// === WEIGHT ENTRIES ===
-app.get('/api/weight', (_req: Request, res: Response) => {
-  const db = readDB();
-  res.json(db.weightEntries);
+app.put('/api/meals/:id', async (req, res) => {
+    if (!mealsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const updates = req.body as Partial<MealDoc>;
+    updates.updatedAt = new Date();
+
+    const result = await mealsCollection.findOneAndUpdate(
+        { _id: objId },
+        { $set: updates },
+        { returnDocument: 'after' }
+    );
+
+    if (!result.value) return res.status(404).json({ message: 'Meal not found' });
+    res.json(mealToResponse(result.value));
 });
 
-app.post('/api/weight', (req: Request, res: Response) => {
-  const db = readDB();
-  const entry: WeightEntry = {
-    ...req.body,
-    id: generateId(),
-    createdAt: new Date().toISOString()
-  };
+app.delete('/api/meals/:id', async (req, res) => {
+    if (!mealsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
 
-  // Replace existing entry for the same date
-  const existingIndex = db.weightEntries.findIndex(e => e.date === entry.date);
-  if (existingIndex !== -1) {
-    db.weightEntries[existingIndex] = entry;
-  } else {
-    db.weightEntries.push(entry);
-  }
-
-  db.weightEntries.sort((a, b) => a.date.localeCompare(b.date));
-  writeDB(db);
-  res.status(201).json(entry);
+    const result = await mealsCollection.deleteOne({ _id: objId });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Meal not found' });
+    res.status(204).send();
 });
 
-app.delete('/api/weight/:id', (req: Request, res: Response) => {
-  const db = readDB();
-  const index = db.weightEntries.findIndex(e => e.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'Weight entry not found' });
-  }
-  db.weightEntries.splice(index, 1);
-  writeDB(db);
-  res.status(204).send();
+// Weight
+app.get('/api/weight', async (_req, res) => {
+    if (!weightCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await weightCollection.find().sort({ date: -1 }).toArray();
+    res.json(docs.map(weightToResponse));
 });
 
-// === SETTINGS ===
-app.get('/api/settings', (_req: Request, res: Response) => {
-  const db = readDB();
-  res.json(db.settings);
+app.post('/api/weight', async (req, res) => {
+    if (!weightCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const entry = req.body as WeightDoc;
+    const now = new Date();
+    const doc: WeightDoc = { ...entry, createdAt: now, updatedAt: now };
+    const result = await weightCollection.insertOne(doc);
+    const inserted = await weightCollection.findOne({ _id: result.insertedId });
+    res.status(201).json(inserted ? weightToResponse(inserted) : { id: result.insertedId.toString(), ...doc });
 });
 
-app.put('/api/settings', (req: Request, res: Response) => {
-  const db = readDB();
-  db.settings = { ...db.settings, ...req.body };
-  writeDB(db);
-  res.json(db.settings);
+app.put('/api/weight/:id', async (req, res) => {
+    if (!weightCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const updates = req.body as Partial<WeightDoc>;
+    updates.updatedAt = new Date();
+
+    const result = await weightCollection.findOneAndUpdate(
+        { _id: objId },
+        { $set: updates },
+        { returnDocument: 'after' }
+    );
+
+    if (!result.value) return res.status(404).json({ message: 'Weight entry not found' });
+    res.json(weightToResponse(result.value));
 });
 
-// Start server
+app.delete('/api/weight/:id', async (req, res) => {
+    if (!weightCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId) return res.status(400).json({ message: 'Invalid id' });
+
+    const result = await weightCollection.deleteOne({ _id: objId });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Weight entry not found' });
+    res.status(204).send();
+});
+
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Database file: ${DB_PATH}`);
+    console.log(`🚀 Server is running at http://localhost:${PORT}`);
 });

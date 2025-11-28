@@ -2,6 +2,7 @@
 
 import {
     Workout,
+    OmitId,
     Meal,
     WeightEntry,
     WorkoutType,
@@ -17,6 +18,8 @@ import {
     getWorkouts,
     getWorkoutsByDate,
     deleteWorkout,
+    updateWorkout,
+    getWorkoutById,
     addMeal,
     getMeals,
     getMealsByDate,
@@ -26,6 +29,8 @@ import {
     getWeightByDate,
     deleteWeightEntry
 } from './storage.js';
+
+import { initializeLiveWorkout, refreshLiveWorkout } from './liveWorkout.js';
 
 // DOM Elements
 let currentPage = 'dashboard';
@@ -93,6 +98,9 @@ function navigateTo(page: string): void {
         case 'dashboard':
             refreshDashboard();
             break;
+        case 'live-workout':
+            refreshLiveWorkout();
+            break;
         case 'workouts':
             refreshWorkoutList();
             break;
@@ -115,7 +123,7 @@ function refreshDashboard(): void {
     const workoutSummary = $('#dashboard-workout-summary');
     if (workoutSummary) {
         if (todayWorkouts.length > 0) {
-            const totalMinutes = todayWorkouts.reduce((sum, w) => sum + w.duration, 0);
+            const totalMinutes = todayWorkouts.reduce((sum, w) => sum + w.durationMinutes, 0);
             workoutSummary.innerHTML = `
                 <p><strong>${todayWorkouts.length}</strong> workout(s)</p>
                 <p><strong>${totalMinutes}</strong> total minutes</p>
@@ -176,10 +184,227 @@ function refreshDashboard(): void {
         progressSummary.innerHTML = `
             <p><strong>${weekWorkouts.length}</strong> workouts this week</p>
             <p><strong>${weekMeals.length}</strong> meals logged this week</p>
-            <p><strong>${weekWorkouts.reduce((sum, w) => sum + w.duration, 0)}</strong> min exercised</p>
+            <p><strong>${weekWorkouts.reduce((sum, w) => sum + w.durationMinutes, 0)}</strong> min exercised</p>
         `;
     }
+
+    // Recent workouts
+    refreshRecentWorkouts();
 }
+
+function refreshRecentWorkouts(): void {
+    const container = $('#dashboard-recent-workouts');
+    if (!container) return;
+
+    const workouts = getWorkouts();
+    const recentWorkouts = workouts.slice(0, 5); // Last 5 workouts
+
+    if (recentWorkouts.length === 0) {
+        container.innerHTML = '<p class="no-data">No workouts logged yet</p>';
+        return;
+    }
+
+    container.innerHTML = recentWorkouts.map(workout => {
+        const workoutId = workout.id || 'workout';
+        const detailId = `workout-detail-${workoutId}`;
+        const editId = `workout-edit-${workoutId}`;
+        const isLiveWorkout = workout.notes?.includes('Live workout');
+        const exercisePreview = workout.programName || workout.exercises[0]?.name || 'Workout';
+
+        return `
+            <div class="recent-workout-item" data-id="${workoutId}">
+                <div class="recent-workout-header" data-toggle-id="${detailId}">
+                    <div class="recent-workout-info">
+                        <div class="recent-workout-date">${formatDate(workout.date)}</div>
+                        <div class="recent-workout-title">${exercisePreview}</div>
+                    </div>
+                    <div class="recent-workout-stats">
+                        <span class="workout-duration">${workout.durationMinutes} min</span>
+                        ${isLiveWorkout ? '<span class="workout-badge">Live</span>' : ''}
+                    </div>
+                </div>
+                <div id="${detailId}" class="recent-workout-details" style="display: none;">
+                    ${renderWorkoutDetail(workout)}
+                    <div class="recent-workout-actions">
+                        <button class="btn btn-secondary btn-small edit-workout-btn" data-id="${workoutId}" data-edit-id="${editId}">Edit</button>
+                        <button class="btn btn-danger btn-small delete-workout-btn" data-id="${workoutId}">Delete</button>
+                    </div>
+                    <div id="${editId}" class="workout-edit-panel" style="display: none;">
+                        ${renderWorkoutEditForm(workout)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    bindRecentWorkoutEvents();
+}
+
+function renderWorkoutDetail(workout: Workout): string {
+    const exercisesHtml = workout.exercises.map(exercise => `
+        <div class="recent-exercise">
+            <div class="recent-exercise-header">
+                <strong>${exercise.name}</strong>
+                ${exercise.elapsedMs ? `<span class="small-text">${Math.round(exercise.elapsedMs / 1000)}s</span>` : ''}
+            </div>
+            <div class="recent-sets">
+                ${exercise.sets.map(set => `
+                    <div class="recent-set">
+                        <span>Set ${set.setNumber}</span>
+                        ${set.weight ? `<span>${set.weight} lbs</span>` : ''}
+                        ${set.reps ? `<span>${set.reps} reps</span>` : ''}
+                        ${set.completedAt ? `<span class="small-text">${new Date(set.completedAt).toLocaleTimeString()}</span>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="recent-workout-meta">
+            ${workout.programName ? `<p><strong>Program:</strong> ${workout.programName}</p>` : ''}
+            ${workout.notes ? `<p class="item-notes"><em>${workout.notes}</em></p>` : ''}
+        </div>
+        ${exercisesHtml || '<p class="small-text">No exercises recorded</p>'}
+    `;
+}
+
+function renderWorkoutEditForm(workout: Workout): string {
+    const workoutId = workout.id || 'workout';
+    return `
+        <form class="edit-workout-form" data-id="${workoutId}">
+            <div class="form-grid">
+                <label>Date
+                    <input type="date" name="date" value="${workout.date}" required>
+                </label>
+                <label>Duration (min)
+                    <input type="number" name="durationMinutes" value="${workout.durationMinutes}" min="0" required>
+                </label>
+                <label>Program
+                    <input type="text" name="programName" value="${workout.programName || ''}" placeholder="Program name">
+                </label>
+                <label>Notes
+                    <textarea name="notes" rows="2" placeholder="Notes">${workout.notes || ''}</textarea>
+                </label>
+            </div>
+            <div class="edit-exercises">
+                ${workout.exercises.map((ex, exIndex) => `
+                    <div class="edit-exercise-card">
+                        <div class="edit-exercise-header">
+                            <input type="text" name="exercise-${exIndex}-name" value="${ex.name}" placeholder="Exercise name">
+                            <input type="number" name="exercise-${exIndex}-elapsed" value="${ex.elapsedMs ?? ''}" placeholder="Elapsed ms">
+                        </div>
+                        <div class="edit-sets-grid">
+                            ${ex.sets.map((set, setIndex) => `
+                                <div class="edit-set-item">
+                                    <div class="small-text">Set ${set.setNumber}</div>
+                                    <input type="number" name="exercise-${exIndex}-set-${setIndex}-weight" value="${set.weight ?? ''}" placeholder="Weight">
+                                    <input type="text" name="exercise-${exIndex}-set-${setIndex}-reps" value="${set.reps ?? ''}" placeholder="Reps">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="edit-actions">
+                <button type="submit" class="btn btn-primary btn-small">Save</button>
+                <button type="button" class="btn btn-secondary btn-small cancel-edit-btn" data-id="${workout.id}">Cancel</button>
+            </div>
+        </form>
+    `;
+}
+
+function bindRecentWorkoutEvents(): void {
+    document.querySelectorAll('.recent-workout-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const targetId = (header as HTMLElement).getAttribute('data-toggle-id');
+            if (targetId) {
+                const detail = document.getElementById(targetId);
+                if (detail) {
+                    detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+                }
+            }
+        });
+    });
+
+    document.querySelectorAll('.delete-workout-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            if (id && confirm('Delete this workout?')) {
+                await deleteWorkout(id);
+                refreshDashboard();
+                refreshWorkoutList();
+                refreshRecentWorkouts();
+            }
+        });
+    });
+
+    document.querySelectorAll('.edit-workout-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const editId = btn.getAttribute('data-edit-id');
+            if (!editId) return;
+            const panel = document.getElementById(editId);
+            if (panel) {
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    });
+
+    document.querySelectorAll('.cancel-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = (btn as HTMLElement).getAttribute('data-id');
+            if (!id) return;
+            const panel = document.getElementById(`workout-edit-${id}`);
+            if (panel) panel.style.display = 'none';
+        });
+    });
+
+    document.querySelectorAll('.edit-workout-form').forEach(form => {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formEl = e.target as HTMLFormElement;
+            const id = formEl.getAttribute('data-id');
+            if (!id) return;
+
+            const workout = getWorkoutById(id);
+            if (!workout) return;
+
+            const formData = new FormData(formEl);
+            const updatedExercises = workout.exercises.map((ex, exIndex) => {
+                const elapsedStr = formData.get(`exercise-${exIndex}-elapsed`) as string;
+                const elapsedMs = elapsedStr ? parseInt(elapsedStr, 10) : undefined;
+
+                return {
+                    ...ex,
+                    name: (formData.get(`exercise-${exIndex}-name`) as string) || ex.name,
+                    elapsedMs,
+                    sets: ex.sets.map((set, setIndex) => {
+                        const weightStr = formData.get(`exercise-${exIndex}-set-${setIndex}-weight`) as string;
+                        const repsStr = formData.get(`exercise-${exIndex}-set-${setIndex}-reps`) as string;
+                        return {
+                            ...set,
+                            weight: weightStr ? parseFloat(weightStr) : undefined,
+                            reps: repsStr || set.reps
+                        };
+                    })
+                };
+            });
+
+            await updateWorkout(id, {
+                date: formData.get('date') as string,
+                durationMinutes: parseInt(formData.get('durationMinutes') as string, 10),
+                programName: (formData.get('programName') as string) || undefined,
+                notes: (formData.get('notes') as string) || undefined,
+                exercises: updatedExercises
+            });
+
+            refreshDashboard();
+            refreshWorkoutList();
+            refreshRecentWorkouts();
+        });
+    });
+}
+
 
 // Workouts
 function initWorkoutForm(): void {
@@ -195,10 +420,18 @@ function initWorkoutForm(): void {
         const workout = {
             date: (form.querySelector('#workout-date') as HTMLInputElement).value,
             type: (form.querySelector('#workout-type') as HTMLSelectElement).value as WorkoutType,
-            duration: parseInt((form.querySelector('#workout-duration') as HTMLInputElement).value),
-            exercises: (form.querySelector('#workout-exercises') as HTMLTextAreaElement).value,
+            durationMinutes: parseInt((form.querySelector('#workout-duration') as HTMLInputElement).value, 10),
+            programName: 'Manual Entry',
+            exercises: [
+                {
+                    exerciseId: `manual-${Date.now()}`,
+                    name: 'Manual Entry',
+                    notes: (form.querySelector('#workout-exercises') as HTMLTextAreaElement).value,
+                    sets: []
+                }
+            ],
             notes: (form.querySelector('#workout-notes') as HTMLTextAreaElement).value
-        };
+        } satisfies OmitId<Workout>;
 
         await addWorkout(workout);
         form.reset();
@@ -226,8 +459,9 @@ function refreshWorkoutList(): void {
                 <span class="item-type badge">${WORKOUT_TYPE_LABELS[workout.type]}</span>
             </div>
             <div class="item-body">
-                <p><strong>${workout.duration} minutes</strong></p>
-                ${workout.exercises ? `<p class="item-details">${workout.exercises}</p>` : ''}
+                <p><strong>${workout.durationMinutes} minutes</strong></p>
+                ${workout.programName ? `<p class="item-details">${workout.programName}</p>` : ''}
+                ${workout.exercises?.length ? `<p class="item-details">${workout.exercises.map(ex => ex.name).join(', ')}</p>` : ''}
                 ${workout.notes ? `<p class="item-notes"><em>${workout.notes}</em></p>` : ''}
             </div>
             <button class="btn btn-danger btn-small delete-btn" data-type="workout" data-id="${workout.id}">Delete</button>
@@ -487,6 +721,9 @@ async function init(): Promise<void> {
     initMealForm();
     initWeightForm();
     initCalendarNavigation();
+    
+    // Initialize live workout
+    await initializeLiveWorkout();
 
     // Initialize dashboard
     refreshDashboard();

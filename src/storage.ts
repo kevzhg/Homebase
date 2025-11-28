@@ -1,251 +1,265 @@
-// Storage management with JSON API backend
-// Falls back to localStorage if API is unavailable
+import {
+    Workout,
+    Meal,
+    WeightEntry,
+    WorkoutProgram,
+    ActiveWorkout,
+    OmitId
+} from './types.js';
 
-import { AppData, Workout, Meal, WeightEntry, AppSettings } from './types.js';
+const ACTIVE_WORKOUT_KEY = 'fitness-tracker-active-workout';
+const API_BASE_URL = 'http://localhost:8000/api';
 
-const API_BASE = 'http://localhost:3001/api';
-const STORAGE_KEY = 'fitness-tracker-data';
-
-const DEFAULT_DATA: AppData = {
-    workouts: [],
-    meals: [],
-    weightEntries: [],
-    settings: {
-        defaultWeightUnit: 'lbs'
-    }
-};
-
-// In-memory cache
-let cachedData: AppData = { ...DEFAULT_DATA };
-let useAPI = true;
-
-// Initialize - try to load from API, fall back to localStorage
-export async function initStorage(): Promise<AppData> {
-    try {
-        const response = await fetch(`${API_BASE}/data`);
-        if (response.ok) {
-            cachedData = await response.json();
-            useAPI = true;
-            console.log('Connected to JSON database');
-            return cachedData;
-        }
-    } catch {
-        console.log('API unavailable, using localStorage');
-        useAPI = false;
-    }
-
-    // Fallback to localStorage
-    cachedData = loadFromLocalStorage();
-    return cachedData;
+interface Database {
+    workouts: Workout[];
+    meals: Meal[];
+    weight: WeightEntry[];
 }
 
-function loadFromLocalStorage(): AppData {
+// This will hold all data fetched from the server
+let db: Database = { workouts: [], meals: [], weight: [] };
+
+/**
+ * Fetches workouts, meals, and weight entries from the server and populates the local 'db' object.
+ * This should be called once when the app starts.
+ */
+export async function initStorage(): Promise<void> {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            return { ...DEFAULT_DATA, ...JSON.parse(stored) };
-        }
+        const [workouts, meals, weight] = await Promise.all([
+            apiGet<Workout[]>('workouts'),
+            apiGet<Meal[]>('meals'),
+            apiGet<WeightEntry[]>('weight')
+        ]);
+
+        db.workouts = workouts.map(normalizeWorkout);
+        db.meals = meals.map(normalizeMeal);
+        db.weight = weight.map(normalizeWeight);
+        console.log('Database initialized from server', db);
     } catch (error) {
-        console.error('Error loading from localStorage:', error);
+        console.error("Error initializing storage:", error);
+        // Initialize with empty structure if server fails
+        db = { workouts: [], meals: [], weight: [] };
     }
-    return { ...DEFAULT_DATA };
 }
 
-function saveToLocalStorage(): void {
+// --- Generic API Functions ---
+
+async function apiGet<T>(endpoint: string): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}/${endpoint}`);
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`API GET to ${endpoint} failed: ${response.status} ${errorBody}`);
+    }
+    return response.json();
+}
+
+async function apiPost<T>(endpoint: string, data: OmitId<T>): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`API POST to ${endpoint} failed: ${response.status} ${errorBody}`);
+    }
+    return response.json();
+}
+
+async function apiPut<T>(endpoint: string, data: Partial<T>): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`API PUT to ${endpoint} failed: ${response.status} ${errorBody}`);
+    }
+    return response.json();
+}
+
+async function apiDelete(endpoint: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/${endpoint}`, { method: 'DELETE' });
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`API DELETE to ${endpoint} failed: ${response.status} ${errorBody}`);
+    }
+}
+
+// Convert backend _id to id to keep frontend consistent
+function normalizeWorkout(raw: Workout): Workout {
+    const id = (raw as any).id ?? (raw as any)._id;
+    const cleaned = { ...raw, id: id ? String(id) : undefined };
+    delete (cleaned as any)._id;
+    return cleaned;
+}
+
+function normalizeMeal(raw: Meal): Meal {
+    const id = (raw as any).id ?? (raw as any)._id;
+    const cleaned = { ...raw, id: id ? String(id) : undefined };
+    delete (cleaned as any)._id;
+    return cleaned;
+}
+
+function normalizeWeight(raw: WeightEntry): WeightEntry {
+    const id = (raw as any).id ?? (raw as any)._id;
+    const cleaned = { ...raw, id: id ? String(id) : undefined };
+    delete (cleaned as any)._id;
+    return cleaned;
+}
+
+// --- Workout Management ---
+
+export const getWorkouts = (): Workout[] => db.workouts;
+export const getWorkoutsByDate = (date: string): Workout[] => db.workouts.filter(w => w.date === date);
+export const getWorkoutById = (id: string): Workout | undefined => db.workouts.find(w => w.id === id);
+
+export async function addWorkout(workoutData: OmitId<Workout>): Promise<void> {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedData));
+        const payload = { ...workoutData } as Record<string, unknown>;
+        delete payload.id;
+        delete payload._id;
+
+        const newWorkout = normalizeWorkout(await apiPost<Workout>('workouts', payload as OmitId<Workout>));
+        db.workouts.push(newWorkout);
+        console.log('Workout saved successfully via API');
     } catch (error) {
-        console.error('Error saving to localStorage:', error);
+        console.error('Error in addWorkout:', error);
+        alert('Could not save workout. Please check the server connection and try again.');
+        throw error; // Re-throw to stop calling function
     }
 }
 
-export function loadData(): AppData {
-    return cachedData;
-}
+export async function updateWorkout(id: string, updates: Partial<Workout>): Promise<Workout | null> {
+    try {
+        const payload = { ...updates } as Record<string, unknown>;
+        delete payload.id;
+        delete payload._id;
 
-export function generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-// Workout operations
-export async function addWorkout(workout: Omit<Workout, 'id' | 'createdAt'>): Promise<Workout> {
-    if (useAPI) {
-        try {
-            const response = await fetch(`${API_BASE}/workouts`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(workout)
-            });
-            const newWorkout = await response.json();
-            cachedData.workouts.push(newWorkout);
-            cachedData.workouts.sort((a, b) => b.date.localeCompare(a.date));
-            return newWorkout;
-        } catch (error) {
-            console.error('API error, falling back to localStorage:', error);
-            useAPI = false;
-        }
+        const updated = normalizeWorkout(await apiPut<Workout>(`workouts/${id}`, payload as Partial<Workout>));
+        db.workouts = db.workouts.map(w => w.id === id ? updated : w);
+        return updated;
+    } catch (error) {
+        console.error('Error in updateWorkout:', error);
+        alert('Could not update workout. Please check the server connection and try again.');
+        return null;
     }
-
-    // Fallback
-    const newWorkout: Workout = {
-        ...workout,
-        id: generateId(),
-        createdAt: new Date().toISOString()
-    };
-    cachedData.workouts.push(newWorkout);
-    cachedData.workouts.sort((a, b) => b.date.localeCompare(a.date));
-    saveToLocalStorage();
-    return newWorkout;
-}
-
-export function getWorkouts(): Workout[] {
-    return [...cachedData.workouts].sort((a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-}
-
-export function getWorkoutsByDate(date: string): Workout[] {
-    return getWorkouts().filter(w => w.date === date);
 }
 
 export async function deleteWorkout(id: string): Promise<void> {
-    if (useAPI) {
-        try {
-            await fetch(`${API_BASE}/workouts/${id}`, { method: 'DELETE' });
-        } catch (error) {
-            console.error('API error:', error);
-        }
+    try {
+        await apiDelete(`workouts/${id}`);
+        db.workouts = db.workouts.filter(w => w.id !== id);
+    } catch (error) {
+        console.error('Error in deleteWorkout:', error);
+        alert('Could not delete workout. Please check the server connection and try again.');
+        throw error;
     }
-    cachedData.workouts = cachedData.workouts.filter(w => w.id !== id);
-    if (!useAPI) saveToLocalStorage();
 }
 
-// Meal operations
-export async function addMeal(meal: Omit<Meal, 'id' | 'createdAt'>): Promise<Meal> {
-    if (useAPI) {
-        try {
-            const response = await fetch(`${API_BASE}/meals`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(meal)
-            });
-            const newMeal = await response.json();
-            cachedData.meals.push(newMeal);
-            cachedData.meals.sort((a, b) => b.date.localeCompare(a.date));
-            return newMeal;
-        } catch (error) {
-            console.error('API error, falling back to localStorage:', error);
-            useAPI = false;
-        }
+// --- Meal Management ---
+
+export const getMeals = (): Meal[] => db.meals;
+export const getMealsByDate = (date: string): Meal[] => db.meals.filter(m => m.date === date);
+
+export async function addMeal(mealData: OmitId<Meal>): Promise<void> {
+    try {
+        const payload = { ...mealData } as Record<string, unknown>;
+        delete payload.id;
+        delete payload._id;
+
+        const newMeal = normalizeMeal(await apiPost<Meal>('meals', payload as OmitId<Meal>));
+        db.meals.push(newMeal);
+    } catch (error) {
+        console.error('Error in addMeal:', error);
+        alert('Could not save meal. Please check the server connection and try again.');
+        throw error;
     }
-
-    const newMeal: Meal = {
-        ...meal,
-        id: generateId(),
-        createdAt: new Date().toISOString()
-    };
-    cachedData.meals.push(newMeal);
-    cachedData.meals.sort((a, b) => b.date.localeCompare(a.date));
-    saveToLocalStorage();
-    return newMeal;
-}
-
-export function getMeals(): Meal[] {
-    return [...cachedData.meals].sort((a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-}
-
-export function getMealsByDate(date: string): Meal[] {
-    return getMeals().filter(m => m.date === date);
 }
 
 export async function deleteMeal(id: string): Promise<void> {
-    if (useAPI) {
-        try {
-            await fetch(`${API_BASE}/meals/${id}`, { method: 'DELETE' });
-        } catch (error) {
-            console.error('API error:', error);
-        }
+    try {
+        await apiDelete(`meals/${id}`);
+        db.meals = db.meals.filter(m => m.id !== id);
+    } catch (error) {
+        console.error('Error in deleteMeal:', error);
+        alert('Could not delete meal. Please check the server connection and try again.');
+        throw error;
     }
-    cachedData.meals = cachedData.meals.filter(m => m.id !== id);
-    if (!useAPI) saveToLocalStorage();
 }
 
-// Weight operations
-export async function addWeightEntry(entry: Omit<WeightEntry, 'id' | 'createdAt'>): Promise<WeightEntry> {
-    if (useAPI) {
-        try {
-            const response = await fetch(`${API_BASE}/weight`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(entry)
-            });
-            const newEntry = await response.json();
-            // Remove existing entry for the same date
-            cachedData.weightEntries = cachedData.weightEntries.filter(w => w.date !== entry.date);
-            cachedData.weightEntries.push(newEntry);
-            cachedData.weightEntries.sort((a, b) => a.date.localeCompare(b.date));
-            return newEntry;
-        } catch (error) {
-            console.error('API error, falling back to localStorage:', error);
-            useAPI = false;
-        }
-    }
+// --- Weight Management ---
 
-    cachedData.weightEntries = cachedData.weightEntries.filter(w => w.date !== entry.date);
-    const newEntry: WeightEntry = {
-        ...entry,
-        id: generateId(),
+export const getWeightEntries = (): WeightEntry[] => db.weight;
+export const getWeightByDate = (date: string): WeightEntry | undefined => db.weight.find(w => w.date === date);
+
+export async function addWeightEntry(weightData: OmitId<WeightEntry>): Promise<void> {
+    try {
+        const payload = { ...weightData } as Record<string, unknown>;
+        delete payload.id;
+        delete payload._id;
+
+        const newWeight = normalizeWeight(await apiPost<WeightEntry>('weight', payload as OmitId<WeightEntry>));
+        db.weight.push(newWeight);
+    } catch (error) {
+        console.error('Error in addWeightEntry:', error);
+        alert('Could not save weight entry. Please check the server connection and try again.');
+        throw error;
+    }
+}
+
+export async function deleteWeightEntry(id:string): Promise<void> {
+    try {
+        await apiDelete(`weight/${id}`);
+        db.weight = db.weight.filter(w => w.id !== id);
+    } catch (error) {
+        console.error('Error in deleteWeightEntry:', error);
+        alert('Could not delete weight entry. Please check the server connection and try again.');
+        throw error;
+    }
+}
+
+// --- Workout Program Management (uses localStorage) ---
+// These are fine to keep in localStorage as they are more like app configuration.
+
+export function getWorkoutPrograms(): WorkoutProgram[] {
+    const data = localStorage.getItem('fitness-tracker-programs');
+    return data ? JSON.parse(data) : [];
+}
+
+export function getWorkoutProgramById(id: string): WorkoutProgram | undefined {
+    return getWorkoutPrograms().find(p => p.id === id);
+}
+
+export async function addWorkoutProgram(programData: OmitId<WorkoutProgram>): Promise<void> {
+    const programs = getWorkoutPrograms();
+    const newProgram: WorkoutProgram = {
+        ...programData,
+        id: `program-${Date.now()}`,
         createdAt: new Date().toISOString()
     };
-    cachedData.weightEntries.push(newEntry);
-    cachedData.weightEntries.sort((a, b) => a.date.localeCompare(b.date));
-    saveToLocalStorage();
-    return newEntry;
+    programs.push(newProgram);
+    localStorage.setItem('fitness-tracker-programs', JSON.stringify(programs));
 }
 
-export function getWeightEntries(): WeightEntry[] {
-    return [...cachedData.weightEntries].sort((a, b) =>
-        new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-}
+// --- Active Workout Management (uses localStorage) ---
+// This is session state, so localStorage is the perfect place for it.
 
-export function getWeightByDate(date: string): WeightEntry | undefined {
-    return cachedData.weightEntries.find(w => w.date === date);
-}
-
-export async function deleteWeightEntry(id: string): Promise<void> {
-    if (useAPI) {
-        try {
-            await fetch(`${API_BASE}/weight/${id}`, { method: 'DELETE' });
-        } catch (error) {
-            console.error('API error:', error);
-        }
+export function getActiveWorkout(): ActiveWorkout | null {
+    try {
+        const data = localStorage.getItem(ACTIVE_WORKOUT_KEY);
+        return data ? JSON.parse(data) : null;
+    } catch (error) {
+        console.error('Error getting active workout:', error);
+        return null;
     }
-    cachedData.weightEntries = cachedData.weightEntries.filter(w => w.id !== id);
-    if (!useAPI) saveToLocalStorage();
 }
 
-// Settings
-export function getSettings(): AppSettings {
-    return cachedData.settings;
+export function saveActiveWorkout(workout: ActiveWorkout): void {
+    localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(workout));
 }
 
-export async function updateSettings(settings: Partial<AppSettings>): Promise<void> {
-    cachedData.settings = { ...cachedData.settings, ...settings };
-
-    if (useAPI) {
-        try {
-            await fetch(`${API_BASE}/settings`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cachedData.settings)
-            });
-        } catch (error) {
-            console.error('API error:', error);
-        }
-    } else {
-        saveToLocalStorage();
-    }
+export function clearActiveWorkout(): void {
+    localStorage.removeItem(ACTIVE_WORKOUT_KEY);
 }
