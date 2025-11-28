@@ -58,7 +58,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 8000);
 
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-const MONGO_DB = process.env.MONGODB_DB || 'workoutnmeal';
+const MONGO_DB = process.env.MONGODB_DB || 'homebase';
 const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_WORKOUTS || 'workouts';
 const MONGO_COLLECTION_MEALS = process.env.MONGODB_COLLECTION_MEALS || 'meals';
 const MONGO_COLLECTION_WEIGHT = process.env.MONGODB_COLLECTION_WEIGHT || 'weight';
@@ -159,14 +159,14 @@ app.put('/api/workouts/:id', async (req, res) => {
     const updates = req.body as Partial<WorkoutDoc>;
     updates.updatedAt = new Date();
 
-    const result = await workoutsCollection.findOneAndUpdate(
+    const updated = await workoutsCollection.findOneAndUpdate(
         { _id: objId },
         { $set: updates },
         { returnDocument: 'after' }
     );
 
-    if (!result.value) return res.status(404).json({ message: 'Workout not found' });
-    res.json(toResponse(result.value));
+    if (!updated) return res.status(404).json({ message: 'Workout not found' });
+    res.json(toResponse(updated));
 });
 
 app.delete('/api/workouts/:id', async (req, res) => {
@@ -204,14 +204,14 @@ app.put('/api/meals/:id', async (req, res) => {
     const updates = req.body as Partial<MealDoc>;
     updates.updatedAt = new Date();
 
-    const result = await mealsCollection.findOneAndUpdate(
+    const updated = await mealsCollection.findOneAndUpdate(
         { _id: objId },
         { $set: updates },
         { returnDocument: 'after' }
     );
 
-    if (!result.value) return res.status(404).json({ message: 'Meal not found' });
-    res.json(mealToResponse(result.value));
+    if (!updated) return res.status(404).json({ message: 'Meal not found' });
+    res.json(mealToResponse(updated));
 });
 
 app.delete('/api/meals/:id', async (req, res) => {
@@ -249,14 +249,14 @@ app.put('/api/weight/:id', async (req, res) => {
     const updates = req.body as Partial<WeightDoc>;
     updates.updatedAt = new Date();
 
-    const result = await weightCollection.findOneAndUpdate(
+    const updated = await weightCollection.findOneAndUpdate(
         { _id: objId },
         { $set: updates },
         { returnDocument: 'after' }
     );
 
-    if (!result.value) return res.status(404).json({ message: 'Weight entry not found' });
-    res.json(weightToResponse(result.value));
+    if (!updated) return res.status(404).json({ message: 'Weight entry not found' });
+    res.json(weightToResponse(updated));
 });
 
 app.delete('/api/weight/:id', async (req, res) => {

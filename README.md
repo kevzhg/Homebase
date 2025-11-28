@@ -1,4 +1,4 @@
-# WorkoutnMeal
+# Homebase
 
 A web application for tracking daily workouts, meal plans, and weight changes with a calendar view.
 
@@ -61,7 +61,7 @@ This serves the frontend at `http://localhost:3000`
 ## Project Structure
 
 ```
-WorkoutnMeal/
+Homebase/
 |-- index.html              # Main HTML file
 |-- styles.css              # Application styles
 |-- package.json            # Project dependencies

@@ -1,5 +1,5 @@
 {
-  "name": "workout-meal-tracker",
+  "name": "homebase",
   "version": "1.0.0",
   "description": "Track daily workouts, meal plans, and weight changes",
   "main": "dist/index.js",
