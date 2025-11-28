@@ -348,6 +348,12 @@
       </main>
     </div>
 
+    <script>
+      // Use Render API in production (GitHub Pages), fall back to localhost for dev.
+      if (location.hostname.endsWith('github.io')) {
+        window.API_BASE_URL = 'https://homebase-50dv.onrender.com/api';
+      }
+    </script>
     <script type="module" src="dist/app.js"></script>
   </body>
 </html>
