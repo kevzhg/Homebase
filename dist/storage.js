@@ -1,20 +1,29 @@
 const ACTIVE_WORKOUT_KEY = 'fitness-tracker-active-workout';
+const WORKOUT_PROGRAMS_KEY = 'fitness-tracker-programs';
 // Allow overriding the API base URL via a global for prod (GitHub Pages) while keeping localhost as the dev default.
 const API_BASE_URL = (typeof window !== 'undefined' && window.API_BASE_URL) || 'http://localhost:8000/api';
+function generateProgramId(existingIds) {
+    const used = existingIds ?? new Set();
+    let id = '';
+    do {
+        id = `program-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    } while (used.has(id));
+    return id;
+}
 // This will hold all data fetched from the server
-let db = { workouts: [], meals: [], weight: [] };
+let db = { trainings: [], meals: [], weight: [] };
 /**
- * Fetches workouts, meals, and weight entries from the server and populates the local 'db' object.
+ * Fetches trainings, meals, and weight entries from the server and populates the local 'db' object.
  * This should be called once when the app starts.
  */
 export async function initStorage() {
     try {
-        const [workouts, meals, weight] = await Promise.all([
-            apiGet('workouts'),
+        const [trainings, meals, weight] = await Promise.all([
+            apiGet('trainings'),
             apiGet('meals'),
             apiGet('weight')
         ]);
-        db.workouts = workouts.map(normalizeWorkout);
+        db.trainings = trainings.map(normalizeTraining);
         db.meals = meals.map(normalizeMeal);
         db.weight = weight.map(normalizeWeight);
         console.log('Database initialized from server', db);
@@ -22,7 +31,7 @@ export async function initStorage() {
     catch (error) {
         console.error("Error initializing storage:", error);
         // Initialize with empty structure if server fails
-        db = { workouts: [], meals: [], weight: [] };
+        db = { trainings: [], meals: [], weight: [] };
     }
 }
 // --- Generic API Functions ---
@@ -66,7 +75,7 @@ async function apiDelete(endpoint) {
     }
 }
 // Convert backend _id to id to keep frontend consistent
-function normalizeWorkout(raw) {
+function normalizeTraining(raw) {
     const id = raw.id ?? raw._id;
     const cleaned = { ...raw, id: id ? String(id) : undefined };
     delete cleaned._id;
@@ -84,48 +93,87 @@ function normalizeWeight(raw) {
     delete cleaned._id;
     return cleaned;
 }
-// --- Workout Management ---
-export const getWorkouts = () => db.workouts;
-export const getWorkoutsByDate = (date) => db.workouts.filter(w => w.date === date);
-export const getWorkoutById = (id) => db.workouts.find(w => w.id === id);
-export async function addWorkout(workoutData) {
+function normalizeWorkoutProgram(raw) {
+    const id = raw.id ?? raw._id ?? `program-${Date.now()}`;
+    const cleaned = ensureExerciseTypes({
+        ...raw,
+        id: String(id),
+        createdAt: raw.createdAt ?? new Date().toISOString(),
+        updatedAt: raw.updatedAt,
+        source: raw.source ?? 'local'
+    });
+    delete cleaned._id;
+    return cleaned;
+}
+function normalizeAndDedupePrograms(rawPrograms) {
+    const seen = new Set();
+    const programs = [];
+    let updated = false;
+    for (const raw of rawPrograms) {
+        const normalized = normalizeWorkoutProgram(raw);
+        let programId = normalized.id;
+        if (!programId || seen.has(programId)) {
+            programId = generateProgramId(seen);
+            normalized.id = programId;
+            updated = true;
+        }
+        seen.add(programId);
+        programs.push(normalized);
+    }
+    return { programs, updated };
+}
+function ensureExerciseTypes(program) {
+    const withTypes = {
+        ...program,
+        exercises: program.exercises.map(ex => ({
+            ...ex,
+            exerciseType: ex.exerciseType ?? 'compound'
+        }))
+    };
+    return withTypes;
+}
+// --- Training Management ---
+export const getTrainings = () => db.trainings;
+export const getTrainingsByDate = (date) => db.trainings.filter(w => w.date === date);
+export const getTrainingById = (id) => db.trainings.find(w => w.id === id);
+export async function addTraining(trainingData) {
     try {
-        const payload = { ...workoutData };
+        const payload = { ...trainingData };
         delete payload.id;
         delete payload._id;
-        const newWorkout = normalizeWorkout(await apiPost('workouts', payload));
-        db.workouts.push(newWorkout);
-        console.log('Workout saved successfully via API');
+        const newTraining = normalizeTraining(await apiPost('trainings', payload));
+        db.trainings.push(newTraining);
+        console.log('Training saved successfully via API');
     }
     catch (error) {
-        console.error('Error in addWorkout:', error);
-        alert('Could not save workout. Please check the server connection and try again.');
+        console.error('Error in addTraining:', error);
+        alert('Could not save training. Please check the server connection and try again.');
         throw error; // Re-throw to stop calling function
     }
 }
-export async function updateWorkout(id, updates) {
+export async function updateTraining(id, updates) {
     try {
         const payload = { ...updates };
         delete payload.id;
         delete payload._id;
-        const updated = normalizeWorkout(await apiPut(`workouts/${id}`, payload));
-        db.workouts = db.workouts.map(w => w.id === id ? updated : w);
+        const updated = normalizeTraining(await apiPut(`trainings/${id}`, payload));
+        db.trainings = db.trainings.map(w => w.id === id ? updated : w);
         return updated;
     }
     catch (error) {
-        console.error('Error in updateWorkout:', error);
-        alert('Could not update workout. Please check the server connection and try again.');
+        console.error('Error in updateTraining:', error);
+        alert('Could not update training. Please check the server connection and try again.');
         return null;
     }
 }
-export async function deleteWorkout(id) {
+export async function deleteTraining(id) {
     try {
-        await apiDelete(`workouts/${id}`);
-        db.workouts = db.workouts.filter(w => w.id !== id);
+        await apiDelete(`trainings/${id}`);
+        db.trainings = db.trainings.filter(w => w.id !== id);
     }
     catch (error) {
-        console.error('Error in deleteWorkout:', error);
-        alert('Could not delete workout. Please check the server connection and try again.');
+        console.error('Error in deleteTraining:', error);
+        alert('Could not delete training. Please check the server connection and try again.');
         throw error;
     }
 }
@@ -186,23 +234,90 @@ export async function deleteWeightEntry(id) {
     }
 }
 // --- Workout Program Management (uses localStorage) ---
-// These are fine to keep in localStorage as they are more like app configuration.
+// These are fine to keep in localStorage as they are more like app configuration,
+// but persistence hooks are ready for a future Mongo-backed collection.
 export function getWorkoutPrograms() {
-    const data = localStorage.getItem('fitness-tracker-programs');
-    return data ? JSON.parse(data) : [];
+    try {
+        const data = localStorage.getItem(WORKOUT_PROGRAMS_KEY);
+        if (!data)
+            return [];
+        const rawPrograms = JSON.parse(data);
+        const { programs, updated } = normalizeAndDedupePrograms(rawPrograms);
+        const withTypes = programs.map(p => ensureExerciseTypes(p));
+        if (updated) {
+            localStorage.setItem(WORKOUT_PROGRAMS_KEY, JSON.stringify(withTypes));
+        }
+        return withTypes;
+    }
+    catch (error) {
+        console.error('Error loading workout programs:', error);
+        return [];
+    }
 }
 export function getWorkoutProgramById(id) {
     return getWorkoutPrograms().find(p => p.id === id);
 }
 export async function addWorkoutProgram(programData) {
     const programs = getWorkoutPrograms();
-    const newProgram = {
+    const existingIds = new Set(programs.map(p => p.id).filter(Boolean));
+    const now = new Date().toISOString();
+    const newProgram = ensureExerciseTypes({
         ...programData,
-        id: `program-${Date.now()}`,
-        createdAt: new Date().toISOString()
-    };
+        id: programData.id ?? generateProgramId(existingIds),
+        createdAt: programData.createdAt ?? now,
+        updatedAt: now,
+        source: programData.source ?? 'local'
+    });
     programs.push(newProgram);
-    localStorage.setItem('fitness-tracker-programs', JSON.stringify(programs));
+    await persistWorkoutPrograms(programs);
+    return newProgram;
+}
+export async function updateWorkoutProgram(id, updates) {
+    const programs = getWorkoutPrograms();
+    const idx = programs.findIndex(p => p.id === id);
+    if (idx === -1)
+        return null;
+    const updated = ensureExerciseTypes({
+        ...programs[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+    });
+    programs[idx] = updated;
+    await persistWorkoutPrograms(programs);
+    return updated;
+}
+export async function deleteWorkoutProgram(id) {
+    const programs = getWorkoutPrograms().filter(p => p.id !== id);
+    await persistWorkoutPrograms(programs);
+}
+export async function cloneWorkoutProgram(id) {
+    const programs = getWorkoutPrograms();
+    const program = programs.find(p => p.id === id);
+    if (!program)
+        return null;
+    const now = new Date().toISOString();
+    const clonedExercises = program.exercises.map(ex => ({ ...ex, exerciseType: ex.exerciseType ?? 'compound' }));
+    const existingIds = new Set(programs.map(p => p.id).filter(Boolean));
+    const clone = {
+        ...program,
+        id: generateProgramId(existingIds),
+        displayName: `${program.displayName} (Copy)`,
+        createdAt: now,
+        updatedAt: now,
+        exercises: clonedExercises,
+        source: 'local'
+    };
+    const nextPrograms = [...programs, clone];
+    await persistWorkoutPrograms(nextPrograms);
+    return clone;
+}
+async function persistWorkoutPrograms(programs) {
+    localStorage.setItem(WORKOUT_PROGRAMS_KEY, JSON.stringify(programs));
+    await persistWorkoutProgramsToApi(programs);
+}
+async function persistWorkoutProgramsToApi(_programs) {
+    // Stub for future Mongo-backed persistence when an API endpoint exists.
+    return Promise.resolve();
 }
 // --- Active Workout Management (uses localStorage) ---
 // This is session state, so localStorage is the perfect place for it.

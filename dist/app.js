@@ -1,6 +1,6 @@
 // Main Application Entry Point
-import { WORKOUT_TYPE_LABELS, MEAL_TYPE_LABELS } from './types.js';
-import { initStorage, addWorkout, getWorkouts, getWorkoutsByDate, deleteWorkout, updateWorkout, getWorkoutById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate } from './storage.js';
+import { TRAINING_TYPE_LABELS, MEAL_TYPE_LABELS } from './types.js';
+import { initStorage, addTraining, getTrainings, getTrainingsByDate, deleteTraining, updateTraining, getTrainingById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate } from './storage.js';
 import { initializeLiveWorkout, refreshLiveWorkout } from './liveWorkout.js';
 // DOM Elements
 let currentPage = 'dashboard';
@@ -77,20 +77,20 @@ function navigateTo(page) {
 // Dashboard
 function refreshDashboard() {
     const today = getTodayString();
-    // Today's workouts
-    const todayWorkouts = getWorkoutsByDate(today);
+    // Today's trainings
+    const todayTrainings = getTrainingsByDate(today);
     const workoutSummary = $('#dashboard-workout-summary');
     if (workoutSummary) {
-        if (todayWorkouts.length > 0) {
-            const totalMinutes = todayWorkouts.reduce((sum, w) => sum + w.durationMinutes, 0);
+        if (todayTrainings.length > 0) {
+            const totalMinutes = todayTrainings.reduce((sum, w) => sum + w.durationMinutes, 0);
             workoutSummary.innerHTML = `
-                <p><strong>${todayWorkouts.length}</strong> workout(s)</p>
+                <p><strong>${todayTrainings.length}</strong> training session(s)</p>
                 <p><strong>${totalMinutes}</strong> total minutes</p>
-                <p>Types: ${todayWorkouts.map(w => WORKOUT_TYPE_LABELS[w.type]).join(', ')}</p>
+                <p>Types: ${todayTrainings.map(w => TRAINING_TYPE_LABELS[w.type]).join(', ')}</p>
             `;
         }
         else {
-            workoutSummary.innerHTML = '<p class="no-data">No workout logged today</p>';
+            workoutSummary.innerHTML = '<p class="no-data">No training logged today</p>';
         }
     }
     // Today's meals
@@ -131,67 +131,67 @@ function refreshDashboard() {
     // Weekly progress
     const progressSummary = $('#dashboard-progress');
     if (progressSummary) {
-        const workouts = getWorkouts();
+        const trainings = getTrainings();
         const meals = getMeals();
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         const weekAgoStr = weekAgo.toISOString().split('T')[0];
-        const weekWorkouts = workouts.filter(w => w.date >= weekAgoStr);
+        const weekTrainings = trainings.filter(w => w.date >= weekAgoStr);
         const weekMeals = meals.filter(m => m.date >= weekAgoStr);
         progressSummary.innerHTML = `
-            <p><strong>${weekWorkouts.length}</strong> workouts this week</p>
+            <p><strong>${weekTrainings.length}</strong> training sessions this week</p>
             <p><strong>${weekMeals.length}</strong> meals logged this week</p>
-            <p><strong>${weekWorkouts.reduce((sum, w) => sum + w.durationMinutes, 0)}</strong> min exercised</p>
+            <p><strong>${weekTrainings.reduce((sum, w) => sum + w.durationMinutes, 0)}</strong> min exercised</p>
         `;
     }
-    // Recent workouts
-    refreshRecentWorkouts();
+    // Recent trainings
+    refreshRecentTrainings();
 }
-function refreshRecentWorkouts() {
+function refreshRecentTrainings() {
     const container = $('#dashboard-recent-workouts');
     if (!container)
         return;
-    const workouts = getWorkouts();
-    const recentWorkouts = workouts.slice(0, 5); // Last 5 workouts
-    if (recentWorkouts.length === 0) {
-        container.innerHTML = '<p class="no-data">No workouts logged yet</p>';
+    const trainings = getTrainings();
+    const recentTrainings = trainings.slice(0, 5); // Last 5 trainings
+    if (recentTrainings.length === 0) {
+        container.innerHTML = '<p class="no-data">No training sessions logged yet</p>';
         return;
     }
-    container.innerHTML = recentWorkouts.map(workout => {
-        const workoutId = workout.id || 'workout';
-        const detailId = `workout-detail-${workoutId}`;
-        const editId = `workout-edit-${workoutId}`;
-        const isLiveWorkout = workout.notes?.includes('Live workout');
-        const exercisePreview = workout.programName || workout.exercises[0]?.name || 'Workout';
+    container.innerHTML = recentTrainings.map(training => {
+        const trainingId = training.id || 'training';
+        const detailId = `training-detail-${trainingId}`;
+        const editId = `training-edit-${trainingId}`;
+        const isLiveTraining = training.notes?.includes('Live training') || training.notes?.includes('Live workout');
+        const exercisePreview = training.programName || training.exercises[0]?.name || 'Training';
         return `
-            <div class="recent-workout-item" data-id="${workoutId}">
+            <div class="recent-workout-item" data-id="${trainingId}">
                 <div class="recent-workout-header" data-toggle-id="${detailId}">
                     <div class="recent-workout-info">
-                        <div class="recent-workout-date">${formatDate(workout.date)}</div>
+                        <div class="recent-workout-date">${formatDate(training.date)}</div>
                         <div class="recent-workout-title">${exercisePreview}</div>
                     </div>
                     <div class="recent-workout-stats">
-                        <span class="workout-duration">${workout.durationMinutes} min</span>
-                        ${isLiveWorkout ? '<span class="workout-badge">Live</span>' : ''}
+                        <span class="workout-duration">${training.durationMinutes} min</span>
+                        ${isLiveTraining ? '<span class="workout-badge">Live</span>' : ''}
                     </div>
                 </div>
                 <div id="${detailId}" class="recent-workout-details" style="display: none;">
-                    ${renderWorkoutDetail(workout)}
+                    ${renderTrainingDetail(training)}
                     <div class="recent-workout-actions">
-                        <button class="btn btn-secondary btn-small edit-workout-btn" data-id="${workoutId}" data-edit-id="${editId}">Edit</button>
-                        <button class="btn btn-danger btn-small delete-workout-btn" data-id="${workoutId}">Delete</button>
+                        <button class="btn btn-secondary btn-small edit-workout-btn" data-id="${trainingId}" data-edit-id="${editId}">Edit</button>
+                        <button class="btn btn-danger btn-small delete-workout-btn" data-id="${trainingId}">Delete</button>
                     </div>
                     <div id="${editId}" class="workout-edit-panel" style="display: none;">
-                        ${renderWorkoutEditForm(workout)}
+                        ${renderTrainingEditForm(training)}
                     </div>
                 </div>
             </div>
         `;
     }).join('');
-    bindRecentWorkoutEvents();
+    bindRecentTrainingEvents();
 }
-function renderWorkoutDetail(workout) {
-    const exercisesHtml = workout.exercises.map(exercise => `
+function renderTrainingDetail(training) {
+    const exercisesHtml = training.exercises.map(exercise => `
         <div class="recent-exercise">
             <div class="recent-exercise-header">
                 <strong>${exercise.name}</strong>
@@ -211,32 +211,32 @@ function renderWorkoutDetail(workout) {
     `).join('');
     return `
         <div class="recent-workout-meta">
-            ${workout.programName ? `<p><strong>Program:</strong> ${workout.programName}</p>` : ''}
-            ${workout.notes ? `<p class="item-notes"><em>${workout.notes}</em></p>` : ''}
+            ${training.programName ? `<p><strong>Program:</strong> ${training.programName}</p>` : ''}
+            ${training.notes ? `<p class="item-notes"><em>${training.notes}</em></p>` : ''}
         </div>
         ${exercisesHtml || '<p class="small-text">No exercises recorded</p>'}
     `;
 }
-function renderWorkoutEditForm(workout) {
-    const workoutId = workout.id || 'workout';
+function renderTrainingEditForm(training) {
+    const trainingId = training.id || 'training';
     return `
-        <form class="edit-workout-form" data-id="${workoutId}">
+        <form class="edit-workout-form" data-id="${trainingId}">
             <div class="form-grid">
                 <label>Date
-                    <input type="date" name="date" value="${workout.date}" required>
+                    <input type="date" name="date" value="${training.date}" required>
                 </label>
                 <label>Duration (min)
-                    <input type="number" name="durationMinutes" value="${workout.durationMinutes}" min="0" required>
+                    <input type="number" name="durationMinutes" value="${training.durationMinutes}" min="0" required>
                 </label>
                 <label>Program
-                    <input type="text" name="programName" value="${workout.programName || ''}" placeholder="Program name">
+                    <input type="text" name="programName" value="${training.programName || ''}" placeholder="Program name">
                 </label>
                 <label>Notes
-                    <textarea name="notes" rows="2" placeholder="Notes">${workout.notes || ''}</textarea>
+                    <textarea name="notes" rows="2" placeholder="Notes">${training.notes || ''}</textarea>
                 </label>
             </div>
             <div class="edit-exercises">
-                ${workout.exercises.map((ex, exIndex) => `
+                ${training.exercises.map((ex, exIndex) => `
                     <div class="edit-exercise-card">
                         <div class="edit-exercise-header">
                             <input type="text" name="exercise-${exIndex}-name" value="${ex.name}" placeholder="Exercise name">
@@ -256,12 +256,12 @@ function renderWorkoutEditForm(workout) {
             </div>
             <div class="edit-actions">
                 <button type="submit" class="btn btn-primary btn-small">Save</button>
-                <button type="button" class="btn btn-secondary btn-small cancel-edit-btn" data-id="${workout.id}">Cancel</button>
+                <button type="button" class="btn btn-secondary btn-small cancel-edit-btn" data-id="${training.id}">Cancel</button>
             </div>
         </form>
     `;
 }
-function bindRecentWorkoutEvents() {
+function bindRecentTrainingEvents() {
     document.querySelectorAll('.recent-workout-header').forEach(header => {
         header.addEventListener('click', () => {
             const targetId = header.getAttribute('data-toggle-id');
@@ -276,11 +276,11 @@ function bindRecentWorkoutEvents() {
     document.querySelectorAll('.delete-workout-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-id');
-            if (id && confirm('Delete this workout?')) {
-                await deleteWorkout(id);
+            if (id && confirm('Delete this training?')) {
+                await deleteTraining(id);
                 refreshDashboard();
                 refreshWorkoutList();
-                refreshRecentWorkouts();
+                refreshRecentTrainings();
             }
         });
     });
@@ -312,11 +312,11 @@ function bindRecentWorkoutEvents() {
             const id = formEl.getAttribute('data-id');
             if (!id)
                 return;
-            const workout = getWorkoutById(id);
-            if (!workout)
+            const training = getTrainingById(id);
+            if (!training)
                 return;
             const formData = new FormData(formEl);
-            const updatedExercises = workout.exercises.map((ex, exIndex) => {
+            const updatedExercises = training.exercises.map((ex, exIndex) => {
                 const elapsedStr = formData.get(`exercise-${exIndex}-elapsed`);
                 const elapsedMs = elapsedStr ? parseInt(elapsedStr, 10) : undefined;
                 return {
@@ -334,7 +334,7 @@ function bindRecentWorkoutEvents() {
                     })
                 };
             });
-            await updateWorkout(id, {
+            await updateTraining(id, {
                 date: formData.get('date'),
                 durationMinutes: parseInt(formData.get('durationMinutes'), 10),
                 programName: formData.get('programName') || undefined,
@@ -343,11 +343,11 @@ function bindRecentWorkoutEvents() {
             });
             refreshDashboard();
             refreshWorkoutList();
-            refreshRecentWorkouts();
+            refreshRecentTrainings();
         });
     });
 }
-// Workouts
+// Training sessions (formerly workouts)
 function initWorkoutForm() {
     const form = $('#workout-form');
     const dateInput = $('#workout-date');
@@ -355,7 +355,7 @@ function initWorkoutForm() {
     dateInput.value = getTodayString();
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const workout = {
+        const training = {
             date: form.querySelector('#workout-date').value,
             type: form.querySelector('#workout-type').value,
             durationMinutes: parseInt(form.querySelector('#workout-duration').value, 10),
@@ -370,45 +370,45 @@ function initWorkoutForm() {
             ],
             notes: form.querySelector('#workout-notes').value
         };
-        await addWorkout(workout);
+        await addTraining(training);
         form.reset();
         dateInput.value = getTodayString();
         refreshWorkoutList();
-        showNotification('Workout added successfully!');
+        showNotification('Training added successfully!');
     });
 }
 function refreshWorkoutList() {
     const listContainer = $('#workout-list');
     if (!listContainer)
         return;
-    const workouts = getWorkouts();
-    if (workouts.length === 0) {
-        listContainer.innerHTML = '<p class="no-data">No workouts logged yet</p>';
+    const trainings = getTrainings();
+    if (trainings.length === 0) {
+        listContainer.innerHTML = '<p class="no-data">No training sessions logged yet</p>';
         return;
     }
-    listContainer.innerHTML = workouts.map(workout => `
-        <div class="item-card" data-id="${workout.id}">
+    listContainer.innerHTML = trainings.map(training => `
+        <div class="item-card" data-id="${training.id}">
             <div class="item-header">
-                <span class="item-date">${formatDate(workout.date)}</span>
-                <span class="item-type badge">${WORKOUT_TYPE_LABELS[workout.type]}</span>
+                <span class="item-date">${formatDate(training.date)}</span>
+                <span class="item-type badge">${TRAINING_TYPE_LABELS[training.type]}</span>
             </div>
             <div class="item-body">
-                <p><strong>${workout.durationMinutes} minutes</strong></p>
-                ${workout.programName ? `<p class="item-details">${workout.programName}</p>` : ''}
-                ${workout.exercises?.length ? `<p class="item-details">${workout.exercises.map(ex => ex.name).join(', ')}</p>` : ''}
-                ${workout.notes ? `<p class="item-notes"><em>${workout.notes}</em></p>` : ''}
+                <p><strong>${training.durationMinutes} minutes</strong></p>
+                ${training.programName ? `<p class="item-details">${training.programName}</p>` : ''}
+                ${training.exercises?.length ? `<p class="item-details">${training.exercises.map(ex => ex.name).join(', ')}</p>` : ''}
+                ${training.notes ? `<p class="item-notes"><em>${training.notes}</em></p>` : ''}
             </div>
-            <button class="btn btn-danger btn-small delete-btn" data-type="workout" data-id="${workout.id}">Delete</button>
+            <button class="btn btn-danger btn-small delete-btn" data-type="workout" data-id="${training.id}">Delete</button>
         </div>
     `).join('');
     // Add delete handlers
     listContainer.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-id');
-            if (id && confirm('Delete this workout?')) {
-                await deleteWorkout(id);
+            if (id && confirm('Delete this training?')) {
+                await deleteTraining(id);
                 refreshWorkoutList();
-                showNotification('Workout deleted');
+                showNotification('Training deleted');
             }
         });
     });

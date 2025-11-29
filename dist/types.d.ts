@@ -1,31 +1,31 @@
 export type OmitId<T> = Omit<T, 'id'>;
-export type WorkoutType = 'strength' | 'cardio' | 'hiit' | 'yoga' | 'stretching' | 'sports' | 'other';
+export type TrainingType = 'strength' | 'cardio' | 'hiit' | 'yoga' | 'stretching' | 'sports' | 'other';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type WeightUnit = 'lbs' | 'kg';
-export declare const WORKOUT_TYPE_LABELS: Record<WorkoutType, string>;
+export declare const TRAINING_TYPE_LABELS: Record<TrainingType, string>;
 export declare const MEAL_TYPE_LABELS: Record<MealType, string>;
-export interface WorkoutSetEntry {
+export interface TrainingSetEntry {
     setNumber: number;
     weight?: number;
     reps?: number | string;
     completed: boolean;
     completedAt?: string;
 }
-export interface WorkoutExerciseEntry {
+export interface TrainingExerciseEntry {
     exerciseId: string;
     name: string;
     notes?: string;
     elapsedMs?: number;
-    sets: WorkoutSetEntry[];
+    sets: TrainingSetEntry[];
 }
-export interface Workout {
+export interface Training {
     id?: string;
     _id?: string;
     date: string;
-    type: WorkoutType;
+    type: TrainingType;
     durationMinutes: number;
     programName?: string;
-    exercises: WorkoutExerciseEntry[];
+    exercises: TrainingExerciseEntry[];
     notes?: string;
     createdAt?: string;
     updatedAt?: string;
@@ -53,6 +53,7 @@ export interface WeightEntry {
     updatedAt?: string;
 }
 export type ProgramType = 'push' | 'pull' | 'legs';
+export type ExerciseType = 'power' | 'hypertrophy' | 'compound' | 'flexibility' | 'cardio';
 export interface Exercise {
     id: string;
     name: string;
@@ -60,6 +61,12 @@ export interface Exercise {
     reps: number | string;
     restTime: number;
     notes?: string;
+    exerciseType?: ExerciseType;
+}
+export interface ExerciseLibraryItem extends Exercise {
+    category: ProgramType;
+    muscles?: string[];
+    equipment?: string;
 }
 export interface WorkoutProgram {
     id: string;
@@ -67,6 +74,8 @@ export interface WorkoutProgram {
     displayName: string;
     exercises: Exercise[];
     createdAt: string;
+    updatedAt?: string;
+    source?: 'local' | 'api';
 }
 export interface ExerciseSet {
     setNumber: number;
@@ -92,4 +101,10 @@ export interface ActiveWorkout {
     restDuration?: number;
     paused: boolean;
 }
+export interface WorkoutProgramDocument extends WorkoutProgram {
+    _id?: string;
+}
+export type WorkoutProgramInput = OmitId<WorkoutProgram> & {
+    id?: string;
+};
 //# sourceMappingURL=types.d.ts.map

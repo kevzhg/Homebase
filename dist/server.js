@@ -6,22 +6,24 @@ const app = express();
 const PORT = Number(process.env.PORT || 8000);
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const MONGO_DB = process.env.MONGODB_DB || 'homebase';
-const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_WORKOUTS || 'workouts';
+const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_TRAININGS
+    || process.env.MONGODB_COLLECTION_WORKOUTS
+    || 'trainings';
 const MONGO_COLLECTION_MEALS = process.env.MONGODB_COLLECTION_MEALS || 'meals';
 const MONGO_COLLECTION_WEIGHT = process.env.MONGODB_COLLECTION_WEIGHT || 'weight';
 const client = new MongoClient(MONGO_URI);
-let workoutsCollection = null;
+let trainingsCollection = null;
 let mealsCollection = null;
 let weightCollection = null;
 async function connectDb() {
-    if (!workoutsCollection) {
+    if (!trainingsCollection) {
         await client.connect();
         const db = client.db(MONGO_DB);
-        workoutsCollection = db.collection(MONGO_COLLECTION);
+        trainingsCollection = db.collection(MONGO_COLLECTION);
         mealsCollection = db.collection(MONGO_COLLECTION_MEALS);
         weightCollection = db.collection(MONGO_COLLECTION_WEIGHT);
-        await workoutsCollection.createIndex({ date: 1 });
-        await workoutsCollection.createIndex({ createdAt: -1 });
+        await trainingsCollection.createIndex({ date: 1 });
+        await trainingsCollection.createIndex({ createdAt: -1 });
         await mealsCollection.createIndex({ date: 1 });
         await weightCollection.createIndex({ date: 1 });
     }
@@ -60,60 +62,112 @@ function parseId(id) {
         return null;
     }
 }
-// Routes
-app.get('/api/workouts', async (_req, res) => {
-    if (!workoutsCollection)
+// Routes (trainings + backward-compatible workouts alias)
+app.get('/api/trainings', async (_req, res) => {
+    if (!trainingsCollection)
         return res.status(500).json({ message: 'DB not initialized' });
-    const docs = await workoutsCollection.find().sort({ createdAt: -1 }).toArray();
+    const docs = await trainingsCollection.find().sort({ createdAt: -1 }).toArray();
     res.json(docs.map(toResponse));
 });
-app.get('/api/workouts/:id', async (req, res) => {
-    if (!workoutsCollection)
+app.get('/api/trainings/:id', async (req, res) => {
+    if (!trainingsCollection)
         return res.status(500).json({ message: 'DB not initialized' });
     const objId = parseId(req.params.id);
     if (!objId)
         return res.status(400).json({ message: 'Invalid id' });
-    const doc = await workoutsCollection.findOne({ _id: objId });
+    const doc = await trainingsCollection.findOne({ _id: objId });
     if (!doc)
-        return res.status(404).json({ message: 'Workout not found' });
+        return res.status(404).json({ message: 'Training not found' });
     res.json(toResponse(doc));
 });
-app.post('/api/workouts', async (req, res) => {
-    if (!workoutsCollection)
+app.post('/api/trainings', async (req, res) => {
+    if (!trainingsCollection)
         return res.status(500).json({ message: 'DB not initialized' });
-    const workout = req.body;
+    const training = req.body;
     const now = new Date();
     const doc = {
-        ...workout,
+        ...training,
         createdAt: now,
         updatedAt: now
     };
-    const result = await workoutsCollection.insertOne(doc);
-    const inserted = await workoutsCollection.findOne({ _id: result.insertedId });
+    const result = await trainingsCollection.insertOne(doc);
+    const inserted = await trainingsCollection.findOne({ _id: result.insertedId });
     res.status(201).json(inserted ? toResponse(inserted) : { id: result.insertedId.toString(), ...doc });
 });
-app.put('/api/workouts/:id', async (req, res) => {
-    if (!workoutsCollection)
+app.put('/api/trainings/:id', async (req, res) => {
+    if (!trainingsCollection)
         return res.status(500).json({ message: 'DB not initialized' });
     const objId = parseId(req.params.id);
     if (!objId)
         return res.status(400).json({ message: 'Invalid id' });
     const updates = req.body;
     updates.updatedAt = new Date();
-    const updated = await workoutsCollection.findOneAndUpdate({ _id: objId }, { $set: updates }, { returnDocument: 'after' });
+    const updated = await trainingsCollection.findOneAndUpdate({ _id: objId }, { $set: updates }, { returnDocument: 'after' });
     if (!updated)
-        return res.status(404).json({ message: 'Workout not found' });
+        return res.status(404).json({ message: 'Training not found' });
     res.json(toResponse(updated));
 });
-app.delete('/api/workouts/:id', async (req, res) => {
-    if (!workoutsCollection)
+app.delete('/api/trainings/:id', async (req, res) => {
+    if (!trainingsCollection)
         return res.status(500).json({ message: 'DB not initialized' });
     const objId = parseId(req.params.id);
     if (!objId)
         return res.status(400).json({ message: 'Invalid id' });
-    const result = await workoutsCollection.deleteOne({ _id: objId });
+    const result = await trainingsCollection.deleteOne({ _id: objId });
     if (result.deletedCount === 0)
-        return res.status(404).json({ message: 'Workout not found' });
+        return res.status(404).json({ message: 'Training not found' });
+    res.status(204).send();
+});
+// Legacy workout routes (alias to trainings)
+app.get('/api/workouts', async (_req, res) => {
+    if (!trainingsCollection)
+        return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await trainingsCollection.find().sort({ createdAt: -1 }).toArray();
+    res.json(docs.map(toResponse));
+});
+app.get('/api/workouts/:id', async (req, res) => {
+    if (!trainingsCollection)
+        return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId)
+        return res.status(400).json({ message: 'Invalid id' });
+    const doc = await trainingsCollection.findOne({ _id: objId });
+    if (!doc)
+        return res.status(404).json({ message: 'Training not found' });
+    res.json(toResponse(doc));
+});
+app.post('/api/workouts', async (req, res) => {
+    if (!trainingsCollection)
+        return res.status(500).json({ message: 'DB not initialized' });
+    const training = req.body;
+    const now = new Date();
+    const doc = { ...training, createdAt: now, updatedAt: now };
+    const result = await trainingsCollection.insertOne(doc);
+    const inserted = await trainingsCollection.findOne({ _id: result.insertedId });
+    res.status(201).json(inserted ? toResponse(inserted) : { id: result.insertedId.toString(), ...doc });
+});
+app.put('/api/workouts/:id', async (req, res) => {
+    if (!trainingsCollection)
+        return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId)
+        return res.status(400).json({ message: 'Invalid id' });
+    const updates = req.body;
+    updates.updatedAt = new Date();
+    const updated = await trainingsCollection.findOneAndUpdate({ _id: objId }, { $set: updates }, { returnDocument: 'after' });
+    if (!updated)
+        return res.status(404).json({ message: 'Training not found' });
+    res.json(toResponse(updated));
+});
+app.delete('/api/workouts/:id', async (req, res) => {
+    if (!trainingsCollection)
+        return res.status(500).json({ message: 'DB not initialized' });
+    const objId = parseId(req.params.id);
+    if (!objId)
+        return res.status(400).json({ message: 'Invalid id' });
+    const result = await trainingsCollection.deleteOne({ _id: objId });
+    if (result.deletedCount === 0)
+        return res.status(404).json({ message: 'Training not found' });
     res.status(204).send();
 });
 // Meals

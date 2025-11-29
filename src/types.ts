@@ -3,11 +3,11 @@ export type OmitId<T> = Omit<T, 'id'>;
 
 // --- General Types ---
 
-export type WorkoutType = 'strength' | 'cardio' | 'hiit' | 'yoga' | 'stretching' | 'sports' | 'other';
+export type TrainingType = 'strength' | 'cardio' | 'hiit' | 'yoga' | 'stretching' | 'sports' | 'other';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type WeightUnit = 'lbs' | 'kg';
 
-export const WORKOUT_TYPE_LABELS: Record<WorkoutType, string> = {
+export const TRAINING_TYPE_LABELS: Record<TrainingType, string> = {
     strength: 'Strength',
     cardio: 'Cardio',
     hiit: 'HIIT',
@@ -26,7 +26,7 @@ export const MEAL_TYPE_LABELS: Record<MealType, string> = {
 
 // --- Data Models (as stored in the database) ---
 
-export interface WorkoutSetEntry {
+export interface TrainingSetEntry {
     setNumber: number;
     weight?: number;
     reps?: number | string;
@@ -34,22 +34,22 @@ export interface WorkoutSetEntry {
     completedAt?: string; // ISO date string
 }
 
-export interface WorkoutExerciseEntry {
+export interface TrainingExerciseEntry {
     exerciseId: string;
     name: string;
     notes?: string;
     elapsedMs?: number; // time spent on this exercise
-    sets: WorkoutSetEntry[];
+    sets: TrainingSetEntry[];
 }
 
-export interface Workout {
+export interface Training {
     id?: string; // convenience for frontend (maps from _id)
     _id?: string; // MongoDB ID as string
     date: string; // YYYY-MM-DD
-    type: WorkoutType;
+    type: TrainingType;
     durationMinutes: number; // total duration in minutes
     programName?: string;
-    exercises: WorkoutExerciseEntry[];
+    exercises: TrainingExerciseEntry[];
     notes?: string;
     createdAt?: string;
     updatedAt?: string;
@@ -82,6 +82,7 @@ export interface WeightEntry {
 // --- Live Workout & Programs ---
 
 export type ProgramType = 'push' | 'pull' | 'legs';
+export type ExerciseType = 'power' | 'hypertrophy' | 'compound' | 'flexibility' | 'cardio';
 
 export interface Exercise {
     id: string;
@@ -90,6 +91,13 @@ export interface Exercise {
     reps: number | string; // e.g., 8 or "8-12"
     restTime: number; // in seconds
     notes?: string;
+    exerciseType?: ExerciseType;
+}
+
+export interface ExerciseLibraryItem extends Exercise {
+    category: ProgramType;
+    muscles?: string[];
+    equipment?: string;
 }
 
 export interface WorkoutProgram {
@@ -98,6 +106,8 @@ export interface WorkoutProgram {
     displayName: string;
     exercises: Exercise[];
     createdAt: string; // ISO date string
+    updatedAt?: string;
+    source?: 'local' | 'api';
 }
 
 export interface ExerciseSet {
@@ -126,3 +136,9 @@ export interface ActiveWorkout {
     restDuration?: number; // in milliseconds
     paused: boolean;
 }
+
+export interface WorkoutProgramDocument extends WorkoutProgram {
+    _id?: string;
+}
+
+export type WorkoutProgramInput = OmitId<WorkoutProgram> & { id?: string };

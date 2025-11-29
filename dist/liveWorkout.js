@@ -1,48 +1,93 @@
 // Live Workout Module
 // Handles active workout session, timers, and exercise tracking
-import { getActiveWorkout, saveActiveWorkout, clearActiveWorkout, getWorkoutPrograms, getWorkoutProgramById, addWorkout, addWorkoutProgram } from './storage.js';
+import { getActiveWorkout, saveActiveWorkout, clearActiveWorkout, getWorkoutPrograms, getWorkoutProgramById, addTraining, addWorkoutProgram, updateWorkoutProgram, cloneWorkoutProgram, deleteWorkoutProgram } from './storage.js';
 // Default workout programs (placeholder until user provides specifics)
 const DEFAULT_PROGRAMS = [
     {
+        id: 'program-default-push',
         name: 'push',
         displayName: 'Push Day',
         exercises: [
-            { id: 'push-1', name: 'Bench Press', sets: 4, reps: 8, restTime: 75, notes: 'Compound movement' },
-            { id: 'push-2', name: 'Shoulder Press', sets: 4, reps: 10, restTime: 75 },
-            { id: 'push-3', name: 'Incline Dumbbell Press', sets: 3, reps: 12, restTime: 75 },
-            { id: 'push-4', name: 'Lateral Raises', sets: 3, reps: 15, restTime: 75 },
-            { id: 'push-5', name: 'Tricep Dips', sets: 3, reps: 12, restTime: 75 },
-            { id: 'push-6', name: 'Tricep Pushdowns', sets: 3, reps: 15, restTime: 75 }
+            { id: 'push-1', name: 'Bench Press', sets: 4, reps: 8, restTime: 75, notes: 'Compound movement', exerciseType: 'power' },
+            { id: 'push-2', name: 'Shoulder Press', sets: 4, reps: 10, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'push-3', name: 'Incline Dumbbell Press', sets: 3, reps: 12, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'push-4', name: 'Lateral Raises', sets: 3, reps: 15, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'push-5', name: 'Tricep Dips', sets: 3, reps: 12, restTime: 75, exerciseType: 'compound' },
+            { id: 'push-6', name: 'Tricep Pushdowns', sets: 3, reps: 15, restTime: 75, exerciseType: 'hypertrophy' }
         ],
         createdAt: new Date().toISOString()
     },
     {
+        id: 'program-default-pull',
         name: 'pull',
         displayName: 'Pull Day',
         exercises: [
-            { id: 'pull-1', name: 'Deadlift', sets: 4, reps: 6, restTime: 75, notes: 'Heavy compound' },
-            { id: 'pull-2', name: 'Pull-ups', sets: 4, reps: 10, restTime: 75 },
-            { id: 'pull-3', name: 'Barbell Rows', sets: 4, reps: 10, restTime: 75 },
-            { id: 'pull-4', name: 'Face Pulls', sets: 3, reps: 15, restTime: 75 },
-            { id: 'pull-5', name: 'Barbell Curls', sets: 3, reps: 12, restTime: 75 },
-            { id: 'pull-6', name: 'Hammer Curls', sets: 3, reps: 12, restTime: 75 }
+            { id: 'pull-1', name: 'Deadlift', sets: 4, reps: 6, restTime: 75, notes: 'Heavy compound', exerciseType: 'power' },
+            { id: 'pull-2', name: 'Pull-ups', sets: 4, reps: 10, restTime: 75, exerciseType: 'compound' },
+            { id: 'pull-3', name: 'Barbell Rows', sets: 4, reps: 10, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'pull-4', name: 'Face Pulls', sets: 3, reps: 15, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'pull-5', name: 'Barbell Curls', sets: 3, reps: 12, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'pull-6', name: 'Hammer Curls', sets: 3, reps: 12, restTime: 75, exerciseType: 'hypertrophy' }
         ],
         createdAt: new Date().toISOString()
     },
     {
+        id: 'program-default-legs',
         name: 'legs',
         displayName: 'Leg Day',
         exercises: [
-            { id: 'legs-1', name: 'Squats', sets: 4, reps: 8, restTime: 75, notes: 'King of exercises' },
-            { id: 'legs-2', name: 'Romanian Deadlifts', sets: 4, reps: 10, restTime: 75 },
-            { id: 'legs-3', name: 'Leg Press', sets: 3, reps: 12, restTime: 75 },
-            { id: 'legs-4', name: 'Leg Curls', sets: 3, reps: 12, restTime: 75 },
-            { id: 'legs-5', name: 'Calf Raises', sets: 4, reps: 15, restTime: 75 },
-            { id: 'legs-6', name: 'Lunges', sets: 3, reps: 12, restTime: 75 }
+            { id: 'legs-1', name: 'Squats', sets: 4, reps: 8, restTime: 75, notes: 'King of exercises', exerciseType: 'power' },
+            { id: 'legs-2', name: 'Romanian Deadlifts', sets: 4, reps: 10, restTime: 75, exerciseType: 'compound' },
+            { id: 'legs-3', name: 'Leg Press', sets: 3, reps: 12, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'legs-4', name: 'Leg Curls', sets: 3, reps: 12, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'legs-5', name: 'Calf Raises', sets: 4, reps: 15, restTime: 75, exerciseType: 'hypertrophy' },
+            { id: 'legs-6', name: 'Lunges', sets: 3, reps: 12, restTime: 75, exerciseType: 'compound' }
         ],
         createdAt: new Date().toISOString()
     }
 ];
+const EXERCISE_LIBRARY = buildExerciseLibrary();
+let builderExercises = [];
+let editingProgramId = null;
+const CATEGORY_LABELS = { push: 'Push', pull: 'Pull', legs: 'Legs' };
+const expandedCategories = new Set();
+let libraryFilterCategory = 'all';
+let libraryFilterType = 'all';
+let librarySearchTerm = '';
+let activeTab = 'start';
+function buildExerciseLibrary() {
+    const seen = new Map();
+    const meta = {
+        'Bench Press': { muscles: ['Chest', 'Triceps', 'Shoulders'], equipment: 'Barbell', exerciseType: 'power' },
+        'Shoulder Press': { muscles: ['Shoulders', 'Triceps'], equipment: 'Dumbbells/Barbell', exerciseType: 'hypertrophy' },
+        'Incline Dumbbell Press': { muscles: ['Chest', 'Shoulders'], equipment: 'Dumbbells', exerciseType: 'hypertrophy' },
+        'Lateral Raises': { muscles: ['Shoulders'], equipment: 'Dumbbells', exerciseType: 'hypertrophy' },
+        'Tricep Dips': { muscles: ['Triceps', 'Chest'], equipment: 'Bodyweight', exerciseType: 'compound' },
+        'Tricep Pushdowns': { muscles: ['Triceps'], equipment: 'Cable', exerciseType: 'hypertrophy' },
+        'Deadlift': { muscles: ['Back', 'Hamstrings', 'Glutes'], equipment: 'Barbell', exerciseType: 'power' },
+        'Pull-ups': { muscles: ['Back', 'Biceps'], equipment: 'Bodyweight', exerciseType: 'compound' },
+        'Barbell Rows': { muscles: ['Back', 'Biceps'], equipment: 'Barbell', exerciseType: 'hypertrophy' },
+        'Face Pulls': { muscles: ['Rear Delts', 'Upper Back'], equipment: 'Cable', exerciseType: 'hypertrophy' },
+        'Barbell Curls': { muscles: ['Biceps'], equipment: 'Barbell', exerciseType: 'hypertrophy' },
+        'Hammer Curls': { muscles: ['Biceps', 'Forearms'], equipment: 'Dumbbells', exerciseType: 'hypertrophy' },
+        'Squats': { muscles: ['Quads', 'Glutes'], equipment: 'Barbell', exerciseType: 'power' },
+        'Romanian Deadlifts': { muscles: ['Hamstrings', 'Glutes'], equipment: 'Barbell', exerciseType: 'compound' },
+        'Leg Press': { muscles: ['Quads', 'Glutes'], equipment: 'Dumbbells', exerciseType: 'hypertrophy' },
+        'Leg Curls': { muscles: ['Hamstrings'], equipment: 'Bands', exerciseType: 'hypertrophy' },
+        'Calf Raises': { muscles: ['Calves'], equipment: 'Dumbbells', exerciseType: 'hypertrophy' },
+        'Lunges': { muscles: ['Quads', 'Glutes'], equipment: 'Dumbbells', exerciseType: 'compound' }
+    };
+    DEFAULT_PROGRAMS.forEach(program => {
+        program.exercises.forEach(ex => {
+            const key = ex.name.toLowerCase();
+            if (!seen.has(key)) {
+                const info = meta[ex.name] || {};
+                seen.set(key, { ...ex, category: program.name, muscles: info.muscles, equipment: info.equipment, exerciseType: info.exerciseType ?? ex.exerciseType ?? 'compound' });
+            }
+        });
+    });
+    return Array.from(seen.values());
+}
 // Timer state
 let workoutTimer = null;
 let restTimer = null;
@@ -75,7 +120,26 @@ function saveLastUsedWeight(exerciseId, weight) {
     }
 }
 export async function initializeLiveWorkout() {
-    // Initialize programs if they don't exist
+    await ensureDefaultPrograms();
+    setupLiveTabs();
+    setupProgramBuilder();
+    setupExerciseLibrary();
+    renderProgramCards();
+    renderExerciseLibrary();
+    setupWorkoutControls();
+    // Check for active workout and resume if exists
+    const activeWorkout = getActiveWorkout();
+    if (activeWorkout) {
+        const program = getWorkoutProgramById(activeWorkout.programId);
+        if (program) {
+            resumeWorkout(activeWorkout);
+        }
+        else {
+            clearActiveWorkout();
+        }
+    }
+}
+async function ensureDefaultPrograms() {
     const programs = getWorkoutPrograms();
     if (programs.length === 0) {
         console.log('Initializing default workout programs...');
@@ -83,23 +147,608 @@ export async function initializeLiveWorkout() {
             await addWorkoutProgram(program);
         }
     }
-    // Setup event listeners
-    setupProgramSelection();
-    setupWorkoutControls();
-    // Check for active workout and resume if exists
-    const activeWorkout = getActiveWorkout();
-    if (activeWorkout) {
-        resumeWorkout(activeWorkout);
-    }
 }
-function setupProgramSelection() {
-    const startButtons = document.querySelectorAll('.start-program-btn');
+function renderProgramCards() {
+    const container = document.getElementById('program-list');
+    if (!container)
+        return;
+    const programs = getWorkoutPrograms();
+    if (programs.length === 0) {
+        container.innerHTML = '<p class="no-data">Create your first training session with the builder.</p>';
+        return;
+    }
+    const categoryIcons = { push: '🔺', pull: '🔻', legs: '🦵' };
+    const grouped = { push: [], pull: [], legs: [] };
+    programs.forEach(p => grouped[p.name].push(p));
+    container.innerHTML = Object.keys(grouped).map(cat => {
+        const catPrograms = grouped[cat];
+        const isExpanded = expandedCategories.has(cat);
+        const count = catPrograms.length;
+        const body = catPrograms.map(program => {
+            const focus = computeProgramFocus(program);
+            const exerciseDetails = program.exercises.map(ex => `
+                <li>
+                    <strong>${ex.name}</strong>
+                    <span class="program-exercise-meta">${ex.sets}×${ex.reps}${ex.restTime ? ` • ${ex.restTime}s rest` : ''}</span>
+                </li>
+            `).join('');
+            return `
+                <div class="program-card" data-program-id="${program.id}">
+                    <div class="program-icon">${categoryIcons[program.name] ?? '🏋️'}</div>
+                    <h3>${program.displayName}</h3>
+                    <p class="program-meta">${CATEGORY_LABELS[program.name] ?? program.name} • ${program.exercises.length} exercises</p>
+                    <div class="program-focus">
+                        <span class="chip focus-chip">${focus.label}</span>
+                        <span class="program-focus-meta">${focus.detail}</span>
+                    </div>
+                    <div class="program-actions">
+                        <button class="btn btn-primary start-program-btn" data-program-id="${program.id}">Start</button>
+                        <button class="btn btn-secondary edit-program-btn" data-program-id="${program.id}">Edit</button>
+                        <button class="btn btn-secondary clone-program-btn" data-program-id="${program.id}">Clone</button>
+                        <button class="btn btn-danger delete-program-btn" data-program-id="${program.id}">Delete</button>
+                        <button class="btn btn-secondary details-program-btn" data-program-id="${program.id}">Details</button>
+                    </div>
+                    <div class="program-details" data-program-id="${program.id}" style="display: none;">
+                        <ul class="program-exercise-list">
+                            ${exerciseDetails}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div class="program-category" data-category="${cat}">
+                <button class="program-category-toggle" data-category="${cat}">
+                    <span>${CATEGORY_LABELS[cat] ?? cat} (${count})</span>
+                    <span class="program-category-caret">${isExpanded ? '▲' : '▼'}</span>
+                </button>
+                <div class="program-category-body" data-category-body="${cat}" style="display: ${isExpanded ? 'grid' : 'none'};">
+                    ${body || '<p class="no-data">No sessions yet for this category.</p>'}
+                </div>
+            </div>
+        `;
+    }).join('');
+    bindProgramCardActions(container);
+    bindCategoryToggles(container);
+}
+function bindProgramCardActions(container) {
+    const startButtons = container.querySelectorAll('.start-program-btn');
     startButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const programName = e.target.getAttribute('data-program');
-            startWorkout(programName);
+            const programId = e.currentTarget.getAttribute('data-program-id');
+            if (programId)
+                startWorkout(programId);
         });
     });
+    const editButtons = container.querySelectorAll('.edit-program-btn');
+    editButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const programId = e.currentTarget.getAttribute('data-program-id');
+            if (programId) {
+                enterEditMode(programId);
+            }
+        });
+    });
+    const cloneButtons = container.querySelectorAll('.clone-program-btn');
+    cloneButtons.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const programId = e.currentTarget.getAttribute('data-program-id');
+            if (programId) {
+                await cloneProgram(programId);
+            }
+        });
+    });
+    const detailButtons = container.querySelectorAll('.details-program-btn');
+    detailButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const programId = e.currentTarget.getAttribute('data-program-id');
+            if (programId)
+                toggleProgramDetails(programId);
+        });
+    });
+    const deleteButtons = container.querySelectorAll('.delete-program-btn');
+    deleteButtons.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const programId = e.currentTarget.getAttribute('data-program-id');
+            if (programId) {
+                await handleDeleteProgram(programId);
+            }
+        });
+    });
+}
+function bindCategoryToggles(container) {
+    const toggles = container.querySelectorAll('.program-category-toggle');
+    toggles.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const category = e.currentTarget.getAttribute('data-category');
+            const body = container.querySelector(`.program-category-body[data-category-body="${category}"]`);
+            const caret = e.currentTarget.querySelector('.program-category-caret');
+            if (!body)
+                return;
+            const isExpanded = expandedCategories.has(category);
+            const nextExpanded = !isExpanded;
+            body.style.display = nextExpanded ? 'grid' : 'none';
+            if (caret)
+                caret.textContent = nextExpanded ? '▲' : '▼';
+            if (nextExpanded) {
+                expandedCategories.add(category);
+            }
+            else {
+                expandedCategories.delete(category);
+            }
+        });
+    });
+}
+function setActiveTab(tab) {
+    activeTab = tab;
+    const startPanel = document.getElementById('tab-start');
+    const buildPanel = document.getElementById('tab-build');
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    if (startPanel)
+        startPanel.classList.toggle('active', tab === 'start');
+    if (buildPanel)
+        buildPanel.classList.toggle('active', tab === 'build');
+    tabButtons.forEach(btn => {
+        const btnTab = btn.getAttribute('data-tab');
+        btn.classList.toggle('active', btnTab === tab);
+    });
+}
+function setupExerciseLibrary() {
+    const search = document.getElementById('library-search');
+    const chips = document.querySelectorAll('[data-library-category]');
+    const typeChips = document.querySelectorAll('[data-library-type]');
+    const toggle = document.getElementById('library-toggle');
+    const libraryList = document.getElementById('exercise-library-list');
+    search?.addEventListener('input', (e) => {
+        librarySearchTerm = e.target.value.toLowerCase();
+        renderExerciseLibrary();
+    });
+    chips.forEach(chip => {
+        chip.addEventListener('click', (e) => {
+            chips.forEach(c => c.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            const category = e.currentTarget.getAttribute('data-library-category');
+            libraryFilterCategory = category;
+            renderExerciseLibrary();
+        });
+    });
+    typeChips.forEach(chip => {
+        chip.addEventListener('click', (e) => {
+            typeChips.forEach(c => c.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            const type = e.currentTarget.getAttribute('data-library-type');
+            libraryFilterType = type;
+            renderExerciseLibrary();
+        });
+    });
+    toggle?.addEventListener('click', () => {
+        if (!libraryList)
+            return;
+        const isHidden = libraryList.style.display === 'none';
+        libraryList.style.display = isHidden ? 'grid' : 'none';
+    });
+}
+function renderExerciseLibrary() {
+    const container = document.getElementById('exercise-library-list');
+    if (!container)
+        return;
+    const filtered = EXERCISE_LIBRARY.filter(ex => {
+        const matchCategory = libraryFilterCategory === 'all' || ex.category === libraryFilterCategory;
+        const term = librarySearchTerm.trim().toLowerCase();
+        const matchSearch = !term || ex.name.toLowerCase().includes(term) || (ex.muscles || []).some(m => m.toLowerCase().includes(term)) || (ex.equipment || '').toLowerCase().includes(term);
+        const matchType = libraryFilterType === 'all' || (ex.exerciseType ?? 'compound') === libraryFilterType;
+        return matchCategory && matchSearch && matchType;
+    });
+    if (filtered.length === 0) {
+        container.innerHTML = '<p class="no-data">No exercises found. Try a different filter.</p>';
+        return;
+    }
+    container.innerHTML = filtered.map(ex => {
+        const muscles = ex.muscles?.join(', ');
+        const typeLabel = (ex.exerciseType ?? 'compound');
+        return `
+            <div class="library-item" data-exercise-id="${ex.id}">
+                <div>
+                    <div class="library-name">${ex.name}</div>
+                    <div class="library-meta">
+                        <span class="chip subtle">${CATEGORY_LABELS[ex.category]}</span>
+                        <span class="chip subtle type-chip">${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)}</span>
+                        ${muscles ? `<span class="chip subtle">${muscles}</span>` : ''}
+                        ${ex.equipment ? `<span class="chip subtle">${ex.equipment}</span>` : ''}
+                    </div>
+                </div>
+                <button class="btn btn-secondary btn-small library-add-btn" data-exercise-id="${ex.id}" type="button">+ Add</button>
+            </div>
+        `;
+    }).join('');
+    container.querySelectorAll('.library-add-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = e.currentTarget.getAttribute('data-exercise-id');
+            if (id) {
+                addExerciseFromLibrary(id);
+            }
+        });
+    });
+}
+function computeProgramFocus(program) {
+    const priority = ['power', 'hypertrophy', 'compound', 'flexibility', 'cardio'];
+    const counts = {
+        power: 0,
+        hypertrophy: 0,
+        compound: 0,
+        flexibility: 0,
+        cardio: 0
+    };
+    program.exercises.forEach(ex => {
+        const type = (ex.exerciseType ?? 'compound');
+        counts[type] = (counts[type] || 0) + 1;
+    });
+    const dominant = priority.reduce((best, current) => {
+        if (counts[current] > counts[best])
+            return current;
+        return best;
+    }, priority[0]);
+    const detailParts = priority
+        .filter(t => counts[t] > 0)
+        .map(t => `${counts[t]} ${t.charAt(0).toUpperCase() + t.slice(1)}`);
+    return {
+        label: `${dominant.charAt(0).toUpperCase() + dominant.slice(1)}-focused`,
+        detail: detailParts.join(' / ') || 'No exercises'
+    };
+}
+function toggleProgramDetails(programId) {
+    const details = document.querySelector(`.program-details[data-program-id="${programId}"]`);
+    if (!details)
+        return;
+    const isHidden = details.style.display === 'none' || details.style.display === '';
+    details.style.display = isHidden ? 'block' : 'none';
+    const btn = document.querySelector(`.details-program-btn[data-program-id="${programId}"]`);
+    if (btn) {
+        btn.textContent = isHidden ? 'Hide Details' : 'Details';
+    }
+}
+function showLiveToast(message) {
+    const existing = document.querySelector('.live-toast');
+    if (existing)
+        existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'live-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2500);
+}
+async function cloneProgram(programId) {
+    const result = await cloneWorkoutProgram(programId);
+    if (!result) {
+        alert('Unable to clone this workout.');
+        return;
+    }
+    renderProgramCards();
+}
+async function handleDeleteProgram(programId) {
+    const program = getWorkoutProgramById(programId);
+    if (!program)
+        return;
+    if (!confirm(`Delete "${program.displayName}"?`))
+        return;
+    await deleteWorkoutProgram(programId);
+    renderProgramCards();
+    // If the active workout was tied to this program, clear it and reset UI
+    const activeWorkout = getActiveWorkout();
+    if (activeWorkout?.programId === programId) {
+        stopWorkoutTimer();
+        stopResting();
+        clearActiveWorkout();
+        hideActiveWorkoutScreen();
+    }
+}
+function setupProgramBuilder() {
+    const categorySelect = document.getElementById('builder-category');
+    const addBtn = document.getElementById('builder-add-exercise');
+    const saveBtn = document.getElementById('builder-save');
+    const resetBtn = document.getElementById('builder-reset');
+    const cancelEditBtn = document.getElementById('builder-cancel-edit');
+    const segmented = document.querySelectorAll('#builder-segmented .segment-btn');
+    const searchInput = document.getElementById('builder-exercise-search');
+    categorySelect?.addEventListener('change', () => renderExerciseOptions());
+    segmented.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const value = e.currentTarget.getAttribute('data-category');
+            segmented.forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            if (categorySelect)
+                categorySelect.value = value;
+            renderExerciseOptions();
+        });
+    });
+    addBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        addExerciseToBuilder();
+    });
+    saveBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await saveBuilderProgram();
+    });
+    resetBtn?.addEventListener('click', () => resetBuilderForm());
+    cancelEditBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        resetBuilderForm();
+    });
+    searchInput?.addEventListener('input', (e) => {
+        builderFilterExercises(e.target.value || '');
+    });
+    renderExerciseOptions();
+    resetBuilderForm();
+}
+function setupLiveTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const tab = e.currentTarget.getAttribute('data-tab');
+            setActiveTab(tab);
+        });
+    });
+    setActiveTab(activeTab);
+}
+function renderExerciseOptions() {
+    const select = document.getElementById('builder-exercise');
+    const categorySelect = document.getElementById('builder-category');
+    if (!select)
+        return;
+    const category = categorySelect?.value || '';
+    const options = EXERCISE_LIBRARY.filter(ex => !category || ex.category === category);
+    select.innerHTML = `<option value="">Pick exercise...</option>` + options
+        .map(ex => `<option value="${ex.id}">${ex.name} (${ex.category})</option>`)
+        .join('');
+}
+function builderFilterExercises(term) {
+    const select = document.getElementById('builder-exercise');
+    const categorySelect = document.getElementById('builder-category');
+    if (!select)
+        return;
+    const category = categorySelect?.value || '';
+    const normalized = term.trim().toLowerCase();
+    const options = EXERCISE_LIBRARY.filter(ex => {
+        const matchCategory = !category || ex.category === category;
+        const matchSearch = !normalized || ex.name.toLowerCase().includes(normalized) || (ex.muscles || []).some(m => m.toLowerCase().includes(normalized));
+        return matchCategory && matchSearch;
+    });
+    select.innerHTML = `<option value="">Pick exercise...</option>` + options
+        .map(ex => `<option value="${ex.id}">${ex.name} (${ex.category})</option>`)
+        .join('');
+}
+function setBuilderEditingState(program) {
+    const label = document.getElementById('builder-editing-label');
+    const cancelBtn = document.getElementById('builder-cancel-edit');
+    const saveBtn = document.getElementById('builder-save');
+    const segmented = document.querySelectorAll('#builder-segmented .segment-btn');
+    if (program) {
+        if (label) {
+            label.style.display = 'block';
+            label.textContent = `Editing: ${program.displayName} (${CATEGORY_LABELS[program.name] ?? program.name})`;
+        }
+        if (cancelBtn)
+            cancelBtn.style.display = 'inline-block';
+        if (saveBtn)
+            saveBtn.textContent = 'Update Workout';
+        segmented.forEach(btn => {
+            const cat = btn.getAttribute('data-category');
+            if (cat === program.name)
+                btn.classList.add('active');
+            else
+                btn.classList.remove('active');
+        });
+    }
+    else {
+        if (label) {
+            label.style.display = 'none';
+            label.textContent = '';
+        }
+        if (cancelBtn)
+            cancelBtn.style.display = 'none';
+        if (saveBtn)
+            saveBtn.textContent = 'Save Workout';
+        segmented.forEach((btn, idx) => {
+            if (idx === 0)
+                btn.classList.add('active');
+            else
+                btn.classList.remove('active');
+        });
+    }
+}
+function addExerciseToBuilder() {
+    const select = document.getElementById('builder-exercise');
+    const setsInput = document.getElementById('builder-sets');
+    const repsInput = document.getElementById('builder-reps');
+    if (!select || !setsInput || !repsInput)
+        return;
+    const exerciseId = select.value;
+    if (!exerciseId) {
+        alert('Choose an exercise to add.');
+        return;
+    }
+    const template = EXERCISE_LIBRARY.find(ex => ex.id === exerciseId);
+    const sets = parseInt(setsInput.value || '', 10) || template?.sets || 3;
+    const reps = repsInput.value.trim() || String(template?.reps ?? 10);
+    const restTime = template?.restTime ?? 75;
+    const name = template?.name ?? 'Exercise';
+    const uniqueId = builderExercises.some(ex => ex.id === exerciseId)
+        ? `${exerciseId}-${Date.now()}`
+        : exerciseId;
+    builderExercises.push({
+        id: uniqueId,
+        name,
+        sets,
+        reps,
+        restTime,
+        notes: template?.notes,
+        exerciseType: template?.exerciseType ?? 'compound'
+    });
+    select.value = '';
+    renderBuilderExercises();
+}
+function addExerciseFromLibrary(exerciseId) {
+    const template = EXERCISE_LIBRARY.find(ex => ex.id === exerciseId);
+    if (!template)
+        return;
+    const setsInput = document.getElementById('builder-sets');
+    const repsInput = document.getElementById('builder-reps');
+    if (setsInput)
+        setsInput.value = String(template.sets);
+    if (repsInput)
+        repsInput.value = String(template.reps);
+    const select = document.getElementById('builder-exercise');
+    if (select)
+        select.value = template.id;
+    addExerciseToBuilder();
+}
+function enterEditMode(programId) {
+    const program = getWorkoutProgramById(programId);
+    if (!program) {
+        alert('Workout not found to edit.');
+        return;
+    }
+    editingProgramId = programId;
+    const categorySelect = document.getElementById('builder-category');
+    const nameInput = document.getElementById('builder-name');
+    if (categorySelect)
+        categorySelect.value = program.name;
+    if (nameInput)
+        nameInput.value = program.displayName;
+    builderExercises = program.exercises.map(ex => ({ ...ex, exerciseType: ex.exerciseType ?? 'compound' }));
+    setBuilderEditingState(program);
+    setActiveTab('build');
+    const segmented = document.querySelectorAll('#builder-segmented .segment-btn');
+    segmented.forEach(btn => {
+        const cat = btn.getAttribute('data-category');
+        if (cat === program.name)
+            btn.classList.add('active');
+        else
+            btn.classList.remove('active');
+    });
+    renderExerciseOptions();
+    renderBuilderExercises();
+    const selection = document.getElementById('program-selection');
+    selection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function renderBuilderExercises() {
+    const list = document.getElementById('builder-exercise-list');
+    if (!list)
+        return;
+    if (builderExercises.length === 0) {
+        list.innerHTML = '<p class="no-data">No exercises added yet.</p>';
+        updateBuilderSummary();
+        return;
+    }
+    list.innerHTML = builderExercises.map((ex, idx) => `
+        <div class="builder-exercise-row" data-index="${idx}">
+            <div>
+                <div class="exercise-name">${ex.name}</div>
+                <div class="builder-exercise-meta">
+                    <span class="builder-chip">${ex.sets} sets</span>
+                    <span class="builder-chip">${ex.reps} reps</span>
+                </div>
+            </div>
+            <div class="builder-exercise-actions">
+                <input type="number" class="builder-set-input" data-index="${idx}" min="1" value="${ex.sets}">
+                <input type="text" class="builder-reps-input" data-index="${idx}" value="${ex.reps}">
+                <button class="btn btn-secondary btn-small remove-builder-exercise" data-index="${idx}" type="button">Remove</button>
+            </div>
+        </div>
+    `).join('');
+    list.querySelectorAll('.builder-set-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const target = e.target;
+            const index = parseInt(target.getAttribute('data-index') || '0', 10);
+            const value = Math.max(1, parseInt(target.value || '1', 10));
+            builderExercises[index].sets = value;
+            renderBuilderExercises();
+        });
+    });
+    list.querySelectorAll('.builder-reps-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const target = e.target;
+            const index = parseInt(target.getAttribute('data-index') || '0', 10);
+            builderExercises[index].reps = target.value || builderExercises[index].reps;
+            renderBuilderExercises();
+        });
+    });
+    list.querySelectorAll('.remove-builder-exercise').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const index = parseInt(e.currentTarget.getAttribute('data-index') || '0', 10);
+            builderExercises.splice(index, 1);
+            renderBuilderExercises();
+        });
+    });
+    updateBuilderSummary();
+}
+function updateBuilderSummary() {
+    const countEl = document.getElementById('builder-summary-count');
+    const setsEl = document.getElementById('builder-summary-sets');
+    const totalExercises = builderExercises.length;
+    const totalSets = builderExercises.reduce((acc, ex) => acc + (Number(ex.sets) || 0), 0);
+    if (countEl)
+        countEl.textContent = `${totalExercises} ${totalExercises === 1 ? 'exercise' : 'exercises'}`;
+    if (setsEl)
+        setsEl.textContent = `${totalSets} ${totalSets === 1 ? 'set' : 'sets'} total`;
+}
+function resetBuilderForm() {
+    const categorySelect = document.getElementById('builder-category');
+    const nameInput = document.getElementById('builder-name');
+    const setsInput = document.getElementById('builder-sets');
+    const repsInput = document.getElementById('builder-reps');
+    editingProgramId = null;
+    builderExercises = [];
+    if (categorySelect)
+        categorySelect.value = 'push';
+    if (nameInput)
+        nameInput.value = `${CATEGORY_LABELS['push']} Session`;
+    if (setsInput)
+        setsInput.value = '4';
+    if (repsInput)
+        repsInput.value = '8';
+    setBuilderEditingState(null);
+    renderExerciseOptions();
+    renderBuilderExercises();
+}
+async function saveBuilderProgram() {
+    const categorySelect = document.getElementById('builder-category');
+    const nameInput = document.getElementById('builder-name');
+    const category = categorySelect?.value || 'push';
+    const displayName = nameInput?.value.trim() || `${CATEGORY_LABELS[category] ?? category} Session`;
+    if (builderExercises.length === 0) {
+        alert('Add at least one exercise before saving.');
+        return;
+    }
+    const programExercises = builderExercises.map(ex => ({ ...ex }));
+    if (editingProgramId) {
+        const updated = await updateWorkoutProgram(editingProgramId, {
+            name: category,
+            displayName,
+            exercises: programExercises
+        });
+        if (!updated) {
+            alert('Could not update this workout. Please try again.');
+            return;
+        }
+    }
+    else {
+        await addWorkoutProgram({
+            name: category,
+            displayName,
+            exercises: programExercises,
+            createdAt: new Date().toISOString()
+        });
+    }
+    renderProgramCards();
+    showLiveToast(`${displayName} saved. Ready to start now?`);
+    resetBuilderForm();
 }
 function setupWorkoutControls() {
     const resetBtn = document.getElementById('reset-workout-btn');
@@ -113,11 +762,10 @@ function setupWorkoutControls() {
     skipRestBtn?.addEventListener('click', skipRest);
     addRestBtn?.addEventListener('click', () => addRestTime(30));
 }
-function startWorkout(programName) {
-    const programs = getWorkoutPrograms();
-    const program = programs.find(p => p.name === programName);
+function startWorkout(programId) {
+    const program = getWorkoutProgramById(programId);
     if (!program) {
-        console.error('Program not found:', programName);
+        console.error('Program not found:', programId);
         return;
     }
     // Create active workout state
@@ -424,7 +1072,7 @@ async function finishWorkout() {
     const completedSets = activeWorkout.exercises.flatMap(ex => ex.sets.filter(s => s.completed)).length;
     const totalSets = activeWorkout.exercises.flatMap(ex => ex.sets).length;
     // Format a simple summary for the notes
-    const notesSummary = `Live workout - ${new Date(activeWorkout.startTime).toLocaleTimeString()} | ${activeWorkout.programName} | Duration: ${durationMinutes} min | Sets: ${completedSets}/${totalSets}`;
+    const notesSummary = `Live training - ${new Date(activeWorkout.startTime).toLocaleTimeString()} | ${activeWorkout.programName} | Duration: ${durationMinutes} min | Sets: ${completedSets}/${totalSets}`;
     // Build structured exercises with timing and set detail
     const structuredExercises = activeWorkout.exercises.map((ex, idx) => {
         const programExercise = program.exercises.find(e => e.id === ex.exerciseId);
@@ -444,7 +1092,7 @@ async function finishWorkout() {
         };
     });
     // Save as regular workout with detailed data
-    await addWorkout({
+    await addTraining({
         date: activeWorkout.startTime.split('T')[0],
         type: 'strength',
         durationMinutes,
@@ -458,7 +1106,7 @@ async function finishWorkout() {
     clearActiveWorkout();
     workoutStartTime = null;
     // Show notification
-    alert(`Workout saved! ${durationMinutes} min, ${completedSets}/${totalSets} sets`);
+    alert(`Training saved! ${durationMinutes} min, ${completedSets}/${totalSets} sets`);
     // Reload page to refresh UI and show saved workout
     window.location.reload();
 }

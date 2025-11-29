@@ -5,10 +5,10 @@ A web application for tracking daily workouts, meal plans, and weight changes wi
 ## Features
 
 - **Dashboard**: Overview of today's activities and weekly progress
-- **Workout Tracker**: Log workouts with type, duration, exercises, and notes
+- **Training Tracker**: Log training sessions with type, duration, exercises, and notes
 - **Meal Plan**: Track meals with calories, protein, and descriptions
 - **Weight Calendar**: Visual calendar showing daily weight entries with statistics
-- **JSON Database**: Data persisted to a local JSON file via REST API
+- **MongoDB backend**: Express API backed by MongoDB (local or Atlas via Render)
 
 ## Getting Started
 
@@ -37,7 +37,7 @@ You need to run **two servers** - the API server and the frontend server:
 ```bash
 npm run server
 ```
-This starts the backend API at `http://localhost:3001`
+This starts the backend API at `http://localhost:8000` (or `PORT` if set).
 
 **Terminal 2 - Start the Frontend:**
 ```bash
@@ -54,9 +54,29 @@ This serves the frontend at `http://localhost:3000`
 | `npm run build` | Build frontend TypeScript |
 | `npm run build:server` | Build server TypeScript |
 | `npm run build:all` | Build both frontend and server |
-| `npm run server` | Start API server (port 3001) |
+| `npm run server` | Start API server (port 8000 or `PORT`) |
 | `npm start` | Start frontend server (port 3000) |
 | `npm run watch` | Watch frontend for changes |
+
+### Local setup: MongoDB quick start
+
+- Start a user-level `mongod` in this repo (no sudo needed):  
+  `mkdir -p data/mongodb && mongod --dbpath data/mongodb --bind_ip 127.0.0.1 --port 27017 --fork --logpath data/mongodb/mongod.log`
+- Verify it is up:  
+  `mongosh --eval "db.runCommand({ ping: 1 })"`
+- Stop when done:  
+  `mongod --dbpath data/mongodb --shutdown`
+- If your environment blocks binding without elevation, start the system service instead: `sudo systemctl start mongod` (or `sudo service mongod start`). Log file for the user-level instance lives at `data/mongodb/mongod.log`.
+
+## Environment / API config (notes)
+
+- **Prod (GitHub Pages → Render)**: `index.html` sets `window.API_BASE_URL` to `https://homebase-50dv.onrender.com/api` when hosted on `github.io`, so Pages talks to Render. Render uses Atlas via `MONGODB_URI` + `MONGODB_DB=homebase`.
+- **Local dev default**: `API_BASE_URL` falls back to `http://localhost:8000/api`; the server uses `MONGODB_URI` default `mongodb://localhost:27017` and `MONGODB_DB=homebase`. Run `mongod`, then `npm run server` and `npm start`.
+- **Local hitting cloud**: to use the Render API from local frontend, set `window.API_BASE_URL` to the Render URL before loading the app (or temporarily edit `index.html`), then `npm start`. To run the server against Atlas locally, export `MONGODB_URI=<Atlas SRV>` and start `npm run server`.
+- **Switching APIs**: change the `window.API_BASE_URL` value (or let the `github.io` check do it), then rebuild for deploy with `npm run build`. Pages URL is case-sensitive: `https://kevzhg.github.io/Homebase/`.
+- **CORS**: if you restrict CORS in `src/server.ts`, allow `http://localhost:3000` and your Pages origin (`https://kevzhg.github.io`).
+- **Terminology**: “Training” = a saved session (stored via `/api/trainings`, default Mongo collection `trainings`). Templates remain the local programs/workouts you pick for live sessions.
+- **Collection envs**: training collection uses `MONGODB_COLLECTION_TRAININGS` (default `trainings`); meals `MONGODB_COLLECTION_MEALS`; weight `MONGODB_COLLECTION_WEIGHT`.
 
 ## Project Structure
 
@@ -84,30 +104,21 @@ The API server provides REST endpoints for data management:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/data` | Get all data |
-| GET | `/api/workouts` | List all workouts |
-| POST | `/api/workouts` | Add a workout |
-| DELETE | `/api/workouts/:id` | Delete a workout |
-| GET | `/api/meals` | List all meals |
+| GET | `/api/trainings` | List training sessions |
+| GET | `/api/trainings/:id` | Get a training session |
+| POST | `/api/trainings` | Add a training session |
+| PUT | `/api/trainings/:id` | Update a training session |
+| DELETE | `/api/trainings/:id` | Delete a training session |
+| GET | `/api/meals` | List meals |
 | POST | `/api/meals` | Add a meal |
+| PUT | `/api/meals/:id` | Update a meal |
 | DELETE | `/api/meals/:id` | Delete a meal |
-| GET | `/api/weight` | List all weight entries |
-| POST | `/api/weight` | Add/update weight entry |
-| DELETE | `/api/weight/:id` | Delete weight entry |
-| GET | `/api/settings` | Get settings |
-| PUT | `/api/settings` | Update settings |
+| GET | `/api/weight` | List weight entries |
+| POST | `/api/weight` | Add a weight entry |
+| PUT | `/api/weight/:id` | Update a weight entry |
+| DELETE | `/api/weight/:id` | Delete a weight entry |
 
 ## Data Storage
 
-Data is stored in `data/db.json` as a JSON file. The frontend connects to the API server to read/write data. If the API server is unavailable, the app falls back to browser localStorage.
-
-### Viewing Your Data
-
-You can view your data directly by:
-1. Opening `data/db.json` in any text editor
-2. Using the API: `curl http://localhost:3001/api/data`
-3. Visiting `http://localhost:3001/api/data` in your browser
-
-### Backup Your Data
-
-Simply copy the `data/db.json` file to back up all your workout, meal, and weight data.
+- Backend: MongoDB. Local dev defaults to `mongodb://localhost:27017` (DB `homebase`). Render uses Atlas via `MONGODB_URI`.
+- Frontend fallback: localStorage is used only for transient live training state and program definitions if the API is unavailable.

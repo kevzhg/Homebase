@@ -1,4 +1,4 @@
-export const WORKOUT_TYPE_LABELS = {
+export const TRAINING_TYPE_LABELS = {
     strength: 'Strength',
     cardio: 'Cardio',
     hiit: 'HIIT',
