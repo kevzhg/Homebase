@@ -1,5 +1,6 @@
 const ACTIVE_WORKOUT_KEY = 'fitness-tracker-active-workout';
 const WORKOUT_PROGRAMS_KEY = 'fitness-tracker-programs';
+const EXERCISES_KEY = 'fitness-tracker-exercises';
 const ONIGIRI_PLANNER_KEY = 'onigiri-planner';
 // Allow overriding the API base URL via a global for prod (GitHub Pages) while keeping localhost as the dev default.
 const API_BASE_URL = (typeof window !== 'undefined' && window.API_BASE_URL) || 'http://localhost:8000/api';
@@ -16,26 +17,35 @@ function generatePlannerId() {
 }
 // This will hold all data fetched from the server
 let db = { trainings: [], meals: [], weight: [] };
+let programCache = [];
+let exerciseCache = [];
 /**
  * Fetches trainings, meals, and weight entries from the server and populates the local 'db' object.
  * This should be called once when the app starts.
  */
 export async function initStorage() {
     try {
-        const [trainings, meals, weight] = await Promise.all([
+        const [trainings, meals, weight, programs, exercises] = await Promise.all([
             apiGet('trainings'),
             apiGet('meals'),
-            apiGet('weight')
+            apiGet('weight'),
+            apiGet('programs'),
+            apiGet('exercises')
         ]);
         db.trainings = trainings.map(normalizeTraining);
         db.meals = meals.map(normalizeMeal);
         db.weight = weight.map(normalizeWeight);
+        hydrateProgramCache(programs);
+        hydrateExerciseCache(exercises);
         console.log('Database initialized from server', db);
     }
     catch (error) {
         console.error("Error initializing storage:", error);
         // Initialize with empty structure if server fails
         db = { trainings: [], meals: [], weight: [] };
+        // Fallback to local programs if API unavailable
+        programCache = loadProgramsFromLocal();
+        exerciseCache = loadExercisesFromLocal();
     }
 }
 // --- Generic API Functions ---
@@ -135,7 +145,7 @@ function normalizeWorkoutProgram(raw) {
         id: String(id),
         createdAt: raw.createdAt ?? new Date().toISOString(),
         updatedAt: raw.updatedAt,
-        source: raw.source ?? 'local'
+        source: raw.source ?? 'api'
     });
     delete cleaned._id;
     return cleaned;
@@ -166,6 +176,59 @@ function ensureExerciseTypes(program) {
         }))
     };
     return withTypes;
+}
+function normalizeExerciseItem(raw) {
+    const id = raw.id ?? raw._id ?? `exercise-${Date.now()}`;
+    const sets = typeof raw.sets === 'number' && Number.isFinite(raw.sets) && raw.sets > 0 ? raw.sets : 3;
+    const restTime = typeof raw.restTime === 'number' && Number.isFinite(raw.restTime) && raw.restTime >= 0 ? raw.restTime : 60;
+    const reps = raw.reps ?? '10';
+    const cleaned = {
+        ...raw,
+        id: String(id),
+        category: raw.category ?? 'push',
+        exerciseType: raw.exerciseType ?? raw.exerciseType ?? 'compound',
+        sets,
+        reps,
+        restTime
+    };
+    delete cleaned._id;
+    return cleaned;
+}
+function loadProgramsFromLocal() {
+    try {
+        const data = localStorage.getItem(WORKOUT_PROGRAMS_KEY);
+        if (!data)
+            return [];
+        const rawPrograms = JSON.parse(data);
+        const { programs } = normalizeAndDedupePrograms(rawPrograms);
+        return programs.map(p => ensureExerciseTypes(p));
+    }
+    catch (error) {
+        console.error('Error loading workout programs:', error);
+        return [];
+    }
+}
+function loadExercisesFromLocal() {
+    try {
+        const data = localStorage.getItem(EXERCISES_KEY);
+        if (!data)
+            return [];
+        const raw = JSON.parse(data);
+        return raw.map(normalizeExerciseItem);
+    }
+    catch (error) {
+        console.error('Error loading exercises:', error);
+        return [];
+    }
+}
+function hydrateProgramCache(rawPrograms) {
+    const { programs } = normalizeAndDedupePrograms(rawPrograms);
+    programCache = programs.map(p => ensureExerciseTypes(p));
+    localStorage.setItem(WORKOUT_PROGRAMS_KEY, JSON.stringify(programCache));
+}
+function hydrateExerciseCache(rawExercises) {
+    exerciseCache = rawExercises.map(normalizeExerciseItem);
+    localStorage.setItem(EXERCISES_KEY, JSON.stringify(exerciseCache));
 }
 // --- Training Management ---
 export const getTrainings = () => db.trainings;
@@ -272,22 +335,10 @@ export async function deleteWeightEntry(id) {
 // These are fine to keep in localStorage as they are more like app configuration,
 // but persistence hooks are ready for a future Mongo-backed collection.
 export function getWorkoutPrograms() {
-    try {
-        const data = localStorage.getItem(WORKOUT_PROGRAMS_KEY);
-        if (!data)
-            return [];
-        const rawPrograms = JSON.parse(data);
-        const { programs, updated } = normalizeAndDedupePrograms(rawPrograms);
-        const withTypes = programs.map(p => ensureExerciseTypes(p));
-        if (updated) {
-            localStorage.setItem(WORKOUT_PROGRAMS_KEY, JSON.stringify(withTypes));
-        }
-        return withTypes;
-    }
-    catch (error) {
-        console.error('Error loading workout programs:', error);
-        return [];
-    }
+    if (programCache.length)
+        return programCache;
+    programCache = loadProgramsFromLocal();
+    return programCache;
 }
 export function getWorkoutProgramById(id) {
     return getWorkoutPrograms().find(p => p.id === id);
@@ -301,11 +352,19 @@ export async function addWorkoutProgram(programData) {
         id: programData.id ?? generateProgramId(existingIds),
         createdAt: programData.createdAt ?? now,
         updatedAt: now,
-        source: programData.source ?? 'local'
+        source: programData.source ?? 'api'
     });
-    programs.push(newProgram);
-    await persistWorkoutPrograms(programs);
-    return newProgram;
+    try {
+        const saved = normalizeWorkoutProgram(await apiPost('programs', newProgram));
+        const next = [...programs.filter(p => p.id !== saved.id), saved];
+        persistWorkoutPrograms(next);
+        return saved;
+    }
+    catch (error) {
+        console.error('Error saving workout program:', error);
+        alert('Could not save workout program. Please check the server connection and try again.');
+        throw error;
+    }
 }
 export async function updateWorkoutProgram(id, updates) {
     const programs = getWorkoutPrograms();
@@ -317,13 +376,29 @@ export async function updateWorkoutProgram(id, updates) {
         ...updates,
         updatedAt: new Date().toISOString()
     });
-    programs[idx] = updated;
-    await persistWorkoutPrograms(programs);
-    return updated;
+    try {
+        const saved = normalizeWorkoutProgram(await apiPut(`programs/${id}`, updated));
+        programs[idx] = saved;
+        persistWorkoutPrograms(programs);
+        return saved;
+    }
+    catch (error) {
+        console.error('Error updating workout program:', error);
+        alert('Could not update workout program. Please check the server connection and try again.');
+        return null;
+    }
 }
 export async function deleteWorkoutProgram(id) {
-    const programs = getWorkoutPrograms().filter(p => p.id !== id);
-    await persistWorkoutPrograms(programs);
+    try {
+        await apiDelete(`programs/${id}`);
+        const programs = getWorkoutPrograms().filter(p => p.id !== id);
+        persistWorkoutPrograms(programs);
+    }
+    catch (error) {
+        console.error('Error deleting workout program:', error);
+        alert('Could not delete workout program. Please check the server connection and try again.');
+        throw error;
+    }
 }
 export async function cloneWorkoutProgram(id) {
     const programs = getWorkoutPrograms();
@@ -340,19 +415,66 @@ export async function cloneWorkoutProgram(id) {
         createdAt: now,
         updatedAt: now,
         exercises: clonedExercises,
-        source: 'local'
+        source: 'api'
     };
-    const nextPrograms = [...programs, clone];
-    await persistWorkoutPrograms(nextPrograms);
-    return clone;
+    return addWorkoutProgram(clone);
 }
-async function persistWorkoutPrograms(programs) {
+function persistWorkoutPrograms(programs) {
+    programCache = programs;
     localStorage.setItem(WORKOUT_PROGRAMS_KEY, JSON.stringify(programs));
-    await persistWorkoutProgramsToApi(programs);
 }
-async function persistWorkoutProgramsToApi(_programs) {
-    // Stub for future Mongo-backed persistence when an API endpoint exists.
-    return Promise.resolve();
+// --- Exercise Library Management ---
+export function getExerciseLibraryItems() {
+    if (exerciseCache.length)
+        return exerciseCache;
+    exerciseCache = loadExercisesFromLocal();
+    return exerciseCache;
+}
+export async function addExerciseDefinition(exercise) {
+    try {
+        const payload = {
+            ...exercise,
+            sets: exercise.sets && exercise.sets > 0 ? exercise.sets : 3,
+            reps: exercise.reps ?? '10',
+            restTime: typeof exercise.restTime === 'number' && exercise.restTime >= 0 ? exercise.restTime : 60
+        };
+        delete payload.id;
+        delete payload._id;
+        const saved = normalizeExerciseItem(await apiPost('exercises', payload));
+        exerciseCache = [...exerciseCache.filter(ex => ex.id !== saved.id), saved];
+        localStorage.setItem(EXERCISES_KEY, JSON.stringify(exerciseCache));
+        return saved;
+    }
+    catch (error) {
+        console.error('Error saving exercise:', error);
+        alert('Could not save exercise. Please check the server connection and try again.');
+        throw error;
+    }
+}
+export async function updateExerciseDefinition(id, updates) {
+    const existing = exerciseCache.find(ex => ex.id === id);
+    if (!existing)
+        return null;
+    try {
+        const merged = {
+            ...existing,
+            ...updates,
+            sets: typeof updates.sets === 'number' && updates.sets > 0 ? updates.sets : existing.sets ?? 3,
+            reps: updates.reps ?? existing.reps ?? '10',
+            restTime: typeof updates.restTime === 'number' && updates.restTime >= 0 ? updates.restTime : existing.restTime ?? 60
+        };
+        const payload = { ...merged };
+        delete payload._id;
+        const saved = normalizeExerciseItem(await apiPut(`exercises/${id}`, payload));
+        exerciseCache = exerciseCache.map(ex => (ex.id === id ? saved : ex));
+        localStorage.setItem(EXERCISES_KEY, JSON.stringify(exerciseCache));
+        return saved;
+    }
+    catch (error) {
+        console.error('Error updating exercise:', error);
+        alert('Could not update exercise. Please check the server connection and try again.');
+        return null;
+    }
 }
 // --- Onigiri Planner (API-first with local fallback) ---
 function getLocalOnigiriPlanner() {

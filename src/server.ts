@@ -82,6 +82,42 @@ interface OnigiriPlannerDoc {
     createdAt?: Date;
 }
 
+interface ExerciseDoc {
+    _id?: ObjectId;
+    id?: string;
+    name: string;
+    category?: string;
+    muscles?: string[];
+    equipment?: string;
+    exerciseType?: string;
+    sets?: number;
+    reps?: number | string;
+    restTime?: number;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
+interface WorkoutExerciseDoc {
+    id: string;
+    name: string;
+    sets: number;
+    reps: number | string;
+    restTime: number;
+    notes?: string;
+    exerciseType?: string;
+}
+
+interface WorkoutProgramDoc {
+    _id?: ObjectId;
+    id?: string;
+    name: string;
+    displayName: string;
+    exercises: WorkoutExerciseDoc[];
+    createdAt?: Date;
+    updatedAt?: Date;
+    source?: 'local' | 'api';
+}
+
 const app = express();
 const PORT = Number(process.env.PORT || 8000);
 
@@ -93,12 +129,16 @@ const MONGO_COLLECTION = process.env.MONGODB_COLLECTION_TRAININGS
 const MONGO_COLLECTION_MEALS = process.env.MONGODB_COLLECTION_MEALS || 'meals';
 const MONGO_COLLECTION_WEIGHT = process.env.MONGODB_COLLECTION_WEIGHT || 'weight';
 const MONGO_COLLECTION_ONIGIRI = process.env.MONGODB_COLLECTION_ONIGIRI || 'onigiri';
+const MONGO_COLLECTION_PROGRAMS = process.env.MONGODB_COLLECTION_PROGRAMS || 'programs';
+const MONGO_COLLECTION_EXERCISES = process.env.MONGODB_COLLECTION_EXERCISES || 'exercises';
 
 const client = new MongoClient(MONGO_URI);
 let trainingsCollection: Collection<TrainingDoc> | null = null;
 let mealsCollection: Collection<MealDoc> | null = null;
 let weightCollection: Collection<WeightDoc> | null = null;
 let onigiriCollection: Collection<OnigiriPlannerDoc> | null = null;
+let programsCollection: Collection<WorkoutProgramDoc> | null = null;
+let exercisesCollection: Collection<ExerciseDoc> | null = null;
 
 async function connectDb(): Promise<void> {
     if (!trainingsCollection) {
@@ -108,11 +148,17 @@ async function connectDb(): Promise<void> {
         mealsCollection = db.collection<MealDoc>(MONGO_COLLECTION_MEALS);
         weightCollection = db.collection<WeightDoc>(MONGO_COLLECTION_WEIGHT);
         onigiriCollection = db.collection<OnigiriPlannerDoc>(MONGO_COLLECTION_ONIGIRI);
+        programsCollection = db.collection<WorkoutProgramDoc>(MONGO_COLLECTION_PROGRAMS);
+        exercisesCollection = db.collection<ExerciseDoc>(MONGO_COLLECTION_EXERCISES);
         await trainingsCollection.createIndex({ date: 1 });
         await trainingsCollection.createIndex({ createdAt: -1 });
         await mealsCollection!.createIndex({ date: 1 });
         await weightCollection!.createIndex({ date: 1 });
         await onigiriCollection!.createIndex({ id: 1 }, { unique: true });
+        await programsCollection!.createIndex({ id: 1 }, { unique: true });
+        await programsCollection!.createIndex({ updatedAt: -1 });
+        await exercisesCollection!.createIndex({ id: 1 }, { unique: true });
+        await exercisesCollection!.createIndex({ name: 1 });
     }
 }
 
@@ -168,6 +214,34 @@ function onigiriToResponse(doc: OnigiriPlannerDoc) {
                 updatedAt: serializeDate(item.updatedAt)
             }))
         }))
+    };
+}
+
+function serializeDate(value?: Date | string): string | undefined {
+    if (!value) return undefined;
+    if (value instanceof Date) return value.toISOString();
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+function programToResponse(doc: WorkoutProgramDoc) {
+    const { _id, ...rest } = doc;
+    const id = rest.id || _id?.toString() || new ObjectId().toHexString();
+    return {
+        ...rest,
+        id,
+        createdAt: serializeDate(rest.createdAt) ?? new Date().toISOString(),
+        updatedAt: serializeDate(rest.updatedAt) ?? undefined
+    };
+}
+
+function exerciseToResponse(doc: ExerciseDoc) {
+    const { _id, ...rest } = doc;
+    return {
+        ...rest,
+        id: rest.id || _id?.toString() || new ObjectId().toHexString(),
+        createdAt: serializeDate(rest.createdAt) ?? new Date().toISOString(),
+        updatedAt: serializeDate(rest.updatedAt) ?? undefined
     };
 }
 
@@ -271,6 +345,185 @@ function buildPlannerDoc(payload: Partial<OnigiriPlannerDoc>, existing?: Onigiri
     }
     return doc;
 }
+
+function findProgramFilter(id: string) {
+    const objId = parseId(id);
+    if (objId) {
+        return { $or: [{ id }, { _id: objId }] };
+    }
+    return { id };
+}
+
+// Exercises
+app.get('/api/exercises', async (_req, res) => {
+    if (!exercisesCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await exercisesCollection.find().sort({ name: 1 }).toArray();
+    res.json(docs.map(exerciseToResponse));
+});
+
+app.get('/api/exercises/:id', async (req, res) => {
+    if (!exercisesCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const doc = await exercisesCollection.findOne(filter);
+    if (!doc) return res.status(404).json({ message: 'Exercise not found' });
+    res.json(exerciseToResponse(doc));
+});
+
+app.post('/api/exercises', async (req, res) => {
+    if (!exercisesCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const payload = req.body as Partial<ExerciseDoc>;
+    const doc = normalizeExercisePayload(payload);
+    if (!doc) return res.status(400).json({ message: 'Invalid exercise payload' });
+
+    await exercisesCollection.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+    const saved = await exercisesCollection.findOne({ id: doc.id });
+    res.status(201).json(exerciseToResponse(saved || doc));
+});
+
+app.put('/api/exercises/:id', async (req, res) => {
+    if (!exercisesCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const existing = await exercisesCollection.findOne(filter);
+    if (!existing) return res.status(404).json({ message: 'Exercise not found' });
+
+    const payload = req.body as Partial<ExerciseDoc>;
+    const doc = normalizeExercisePayload(payload, existing);
+    if (!doc) return res.status(400).json({ message: 'Invalid exercise payload' });
+
+    await exercisesCollection.updateOne(filter, { $set: doc });
+    const saved = await exercisesCollection.findOne(filter);
+    res.json(exerciseToResponse(saved || doc));
+});
+
+app.delete('/api/exercises/:id', async (req, res) => {
+    if (!exercisesCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const result = await exercisesCollection.deleteOne(filter);
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Exercise not found' });
+    res.status(204).send();
+});
+
+function normalizeProgramExercises(exercises: any[] | undefined | null): WorkoutExerciseDoc[] {
+    const normalized: WorkoutExerciseDoc[] = [];
+    if (!Array.isArray(exercises)) return normalized;
+
+    exercises.forEach((ex, idx) => {
+        if (!ex || !ex.name) return;
+        const id = typeof ex.id === 'string' && ex.id.trim()
+            ? ex.id
+            : `exercise-${Date.now().toString(36)}-${idx}`;
+        const sets = Number(ex.sets);
+        const restTime = Number(ex.restTime);
+        normalized.push({
+            id,
+            name: String(ex.name),
+            sets: Number.isFinite(sets) && sets > 0 ? sets : 1,
+            reps: ex.reps ?? '',
+            restTime: Number.isFinite(restTime) && restTime >= 0 ? restTime : 0,
+            notes: ex.notes,
+            exerciseType: ex.exerciseType
+        });
+    });
+
+    return normalized;
+}
+
+function normalizeExercisePayload(payload: Partial<ExerciseDoc>, existing?: ExerciseDoc): ExerciseDoc | null {
+    if (!payload.name || typeof payload.name !== 'string') return null;
+    const now = new Date();
+    const id = payload.id || existing?.id || new ObjectId().toHexString();
+    const categoryRaw = typeof payload.category === 'string' ? payload.category : existing?.category || 'push';
+    const category = ['push', 'pull', 'legs'].includes(categoryRaw) ? categoryRaw : 'push';
+    const muscles = Array.isArray(payload.muscles)
+        ? payload.muscles.map(m => String(m)).filter(Boolean)
+        : existing?.muscles || [];
+    const equipment = payload.equipment ? String(payload.equipment) : existing?.equipment;
+    const exerciseType = payload.exerciseType ? String(payload.exerciseType) : existing?.exerciseType;
+    const sets = payload.sets ?? existing?.sets;
+    const reps = payload.reps ?? existing?.reps;
+    const restTime = payload.restTime ?? existing?.restTime;
+
+    const doc: ExerciseDoc = {
+        id,
+        name: payload.name,
+        category,
+        muscles,
+        equipment,
+        exerciseType,
+        sets: typeof sets === 'number' && Number.isFinite(sets) && sets > 0 ? sets : undefined,
+        reps: typeof reps === 'number' || typeof reps === 'string' ? reps : undefined,
+        restTime: typeof restTime === 'number' && Number.isFinite(restTime) && restTime >= 0 ? restTime : undefined,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+    };
+
+    if (existing && existing._id) {
+        doc._id = existing._id;
+    }
+
+    return doc;
+}
+
+// Workout Programs
+app.get('/api/programs', async (_req, res) => {
+    if (!programsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const docs = await programsCollection.find().sort({ updatedAt: -1, createdAt: -1 }).toArray();
+    res.json(docs.map(programToResponse));
+});
+
+app.get('/api/programs/:id', async (req, res) => {
+    if (!programsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const doc = await programsCollection.findOne(filter);
+    if (!doc) return res.status(404).json({ message: 'Program not found' });
+    res.json(programToResponse(doc));
+});
+
+app.post('/api/programs', async (req, res) => {
+    if (!programsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const payload = req.body as WorkoutProgramDoc;
+    const now = new Date();
+    const exercises = normalizeProgramExercises(payload.exercises);
+    const doc: WorkoutProgramDoc = {
+        ...payload,
+        exercises,
+        id: payload.id || new ObjectId().toHexString(),
+        createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
+        updatedAt: now,
+        source: payload.source ?? 'api'
+    };
+
+    await programsCollection.updateOne({ id: doc.id }, { $set: doc }, { upsert: true });
+    const saved = await programsCollection.findOne({ id: doc.id });
+    res.status(201).json(programToResponse(saved || doc));
+});
+
+app.put('/api/programs/:id', async (req, res) => {
+    if (!programsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const updates = req.body as Partial<WorkoutProgramDoc>;
+    updates.updatedAt = new Date();
+    if (updates.exercises) {
+        updates.exercises = normalizeProgramExercises(updates.exercises);
+    }
+
+    const updated = await programsCollection.findOneAndUpdate(
+        filter,
+        { $set: updates },
+        { returnDocument: 'after' }
+    );
+
+    if (!updated) return res.status(404).json({ message: 'Program not found' });
+    res.json(programToResponse(updated));
+});
+
+app.delete('/api/programs/:id', async (req, res) => {
+    if (!programsCollection) return res.status(500).json({ message: 'DB not initialized' });
+    const filter = findProgramFilter(req.params.id);
+    const result = await programsCollection.deleteOne(filter);
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Program not found' });
+    res.status(204).send();
+});
 
 // Routes (trainings + backward-compatible workouts alias)
 app.get('/api/trainings', async (_req, res) => {

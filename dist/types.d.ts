@@ -83,6 +83,7 @@ export interface ExerciseSet {
     completedAt?: string;
     weight?: number;
     actualReps?: number;
+    partial?: boolean;
 }
 export interface ActiveExercise {
     exerciseId: string;
@@ -99,7 +100,10 @@ export interface ActiveWorkout {
     isResting: boolean;
     restStartTime?: string;
     restDuration?: number;
+    restLabel?: string;
     paused: boolean;
+    pauseStartedAt?: string;
+    totalPausedMs?: number;
 }
 export interface WorkoutProgramDocument extends WorkoutProgram {
     _id?: string;

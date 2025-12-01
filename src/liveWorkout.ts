@@ -23,7 +23,11 @@ import {
     addWorkoutProgram,
     updateWorkoutProgram,
     cloneWorkoutProgram,
-    deleteWorkoutProgram
+    deleteWorkoutProgram,
+    getTrainings,
+    getExerciseLibraryItems,
+    addExerciseDefinition,
+    updateExerciseDefinition
 } from './storage.js';
 
 // Default workout programs (placeholder until user provides specifics)
@@ -72,7 +76,8 @@ const DEFAULT_PROGRAMS: WorkoutProgramInput[] = [
     }
 ];
 
-const EXERCISE_LIBRARY: ExerciseLibraryItem[] = buildExerciseLibrary();
+const DEFAULT_EXERCISE_LIBRARY: ExerciseLibraryItem[] = buildDefaultExerciseLibrary();
+let exerciseLibrary: ExerciseLibraryItem[] = [];
 let builderExercises: Exercise[] = [];
 let editingProgramId: string | null = null;
 const CATEGORY_LABELS: Record<ProgramType, string> = { push: 'Push', pull: 'Pull', legs: 'Legs' };
@@ -81,8 +86,9 @@ let libraryFilterCategory: ProgramType | 'all' = 'all';
 let libraryFilterType: ExerciseType | 'all' = 'all';
 let librarySearchTerm = '';
 let activeTab: 'start' | 'build' = 'start';
+let editingLibraryExerciseId: string | null = null;
 
-function buildExerciseLibrary(): ExerciseLibraryItem[] {
+function buildDefaultExerciseLibrary(): ExerciseLibraryItem[] {
     const seen = new Map<string, ExerciseLibraryItem>();
     const meta: Record<string, { muscles?: string[]; equipment?: string; exerciseType?: ExerciseType }> = {
         'Dumbbell External Rotations': { muscles: ['Rotator Cuff'], equipment: 'Light Dumbbells', exerciseType: 'flexibility' },
@@ -118,14 +124,77 @@ function buildExerciseLibrary(): ExerciseLibraryItem[] {
     return Array.from(seen.values());
 }
 
+function mergeExerciseLibrary(items: ExerciseLibraryItem[]): ExerciseLibraryItem[] {
+    const map = new Map<string, ExerciseLibraryItem>();
+    const add = (ex: ExerciseLibraryItem) => {
+        if (!ex || !ex.name) return;
+        const key = (ex.id || ex.name).toLowerCase();
+        if (!map.has(key)) {
+            map.set(key, { ...ex, category: (ex as any).category ?? 'push', exerciseType: ex.exerciseType ?? 'compound' });
+        } else {
+            map.set(key, { ...map.get(key)!, ...ex, category: (ex as any).category ?? map.get(key)!.category ?? 'push', exerciseType: ex.exerciseType ?? map.get(key)!.exerciseType ?? 'compound' });
+        }
+    };
+
+    items.forEach(add);
+    DEFAULT_EXERCISE_LIBRARY.forEach(add);
+
+    return Array.from(map.values());
+}
+
+function setExerciseLibrary(items: ExerciseLibraryItem[]): void {
+    exerciseLibrary = mergeExerciseLibrary(items);
+    renderExerciseLibrary();
+    renderExerciseOptions();
+}
+
+function resetExerciseForm(): void {
+    const newName = document.getElementById('new-exercise-name') as HTMLInputElement | null;
+    const newCategory = document.getElementById('new-exercise-category') as HTMLSelectElement | null;
+    const newType = document.getElementById('new-exercise-type') as HTMLSelectElement | null;
+    const newMuscles = document.getElementById('new-exercise-muscles') as HTMLInputElement | null;
+    const newEquipment = document.getElementById('new-exercise-equipment') as HTMLInputElement | null;
+    const newSets = document.getElementById('new-exercise-sets') as HTMLInputElement | null;
+    const newReps = document.getElementById('new-exercise-reps') as HTMLInputElement | null;
+    const newRest = document.getElementById('new-exercise-rest') as HTMLInputElement | null;
+    const saveBtn = document.getElementById('save-exercise-btn') as HTMLButtonElement | null;
+    const cancelBtn = document.getElementById('cancel-exercise-btn') as HTMLButtonElement | null;
+
+    editingLibraryExerciseId = null;
+    if (newName) newName.value = '';
+    if (newCategory) newCategory.value = 'push';
+    if (newType) newType.value = 'compound';
+    if (newMuscles) newMuscles.value = '';
+    if (newEquipment) newEquipment.value = '';
+    if (newSets) newSets.value = '3';
+    if (newReps) newReps.value = '10';
+    if (newRest) newRest.value = '60';
+    if (saveBtn) saveBtn.textContent = 'Save Exercise';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
 // Timer state
 let workoutTimer: number | null = null;
 let restTimer: number | null = null;
 let workoutStartTime: Date | null = null;
 let restEndTime: number | null = null;
+let restBeepCtx: AudioContext | null = null;
+let restBeepSource: OscillatorNode | null = null;
+const REST_LABEL_DEFAULT = 'Rest Time';
+const WARMUP_LABEL = 'Warm Up';
+const INITIAL_SESSION_REST_SECONDS = 300;
+const LAST_SESSION_WEIGHTS_KEY = 'fitness-tracker-last-session-weights';
+let lastSessionWeights: Record<string, number> = {};
 
 // Weight memory - stores last used weight per exercise
 const EXERCISE_WEIGHTS_KEY = 'fitness-tracker-exercise-weights';
+
+function toggleLiveHero(show: boolean): void {
+    const hero = document.getElementById('live-hero');
+    if (hero) {
+        hero.style.display = show ? '' : 'none';
+    }
+}
 
 function getLastUsedWeight(exerciseId: string): number | undefined {
     try {
@@ -151,9 +220,68 @@ function saveLastUsedWeight(exerciseId: string, weight: number): void {
     }
 }
 
+function loadLastSessionWeights(): void {
+    try {
+        const stored = localStorage.getItem(LAST_SESSION_WEIGHTS_KEY);
+        lastSessionWeights = stored ? JSON.parse(stored) : {};
+    } catch (error) {
+        console.error('Error loading last session weights:', error);
+        lastSessionWeights = {};
+    }
+}
+
+function persistLastSessionWeights(): void {
+    try {
+        localStorage.setItem(LAST_SESSION_WEIGHTS_KEY, JSON.stringify(lastSessionWeights));
+    } catch (error) {
+        console.error('Error saving last session weights:', error);
+    }
+}
+
+function hydrateLastSessionWeightsFromTrainings(): void {
+    const trainings = getTrainings();
+    for (const training of trainings) {
+        for (const exercise of training.exercises || []) {
+            const lastSet = [...(exercise.sets || [])].reverse().find(s => typeof s.weight === 'number' && Number.isFinite(s.weight));
+            if (lastSet && typeof exercise.exerciseId === 'string' && lastSessionWeights[exercise.exerciseId] === undefined) {
+                lastSessionWeights[exercise.exerciseId] = Number(lastSet.weight);
+            }
+        }
+    }
+    persistLastSessionWeights();
+}
+
+function getPreferredWeight(exerciseId: string): number | undefined {
+    if (lastSessionWeights[exerciseId] !== undefined) return lastSessionWeights[exerciseId];
+    return getLastUsedWeight(exerciseId);
+}
+
+function updateWeightCaches(exerciseId: string, weight?: number): void {
+    if (typeof weight === 'number' && Number.isFinite(weight)) {
+        saveLastUsedWeight(exerciseId, weight);
+        lastSessionWeights[exerciseId] = weight;
+        persistLastSessionWeights();
+    }
+}
+
+function getTargetReps(reps: number | string | undefined): number | undefined {
+    if (typeof reps === 'number' && Number.isFinite(reps)) return reps;
+    if (typeof reps === 'string') {
+        const match = reps.match(/(\d+)/);
+        if (match) {
+            const val = parseInt(match[1], 10);
+            return Number.isFinite(val) ? val : undefined;
+        }
+    }
+    return undefined;
+}
+
 
 export async function initializeLiveWorkout(): Promise<void> {
     await ensureDefaultPrograms();
+    setExerciseLibrary(getExerciseLibraryItems());
+    loadLastSessionWeights();
+    hydrateLastSessionWeightsFromTrainings();
 
     setupLiveTabs();
     setupProgramBuilder();
@@ -347,6 +475,16 @@ function setupExerciseLibrary(): void {
     const typeChips = document.querySelectorAll('[data-library-type]');
     const toggle = document.getElementById('library-toggle') as HTMLButtonElement | null;
     const libraryList = document.getElementById('exercise-library-list') as HTMLElement | null;
+    const newName = document.getElementById('new-exercise-name') as HTMLInputElement | null;
+    const newCategory = document.getElementById('new-exercise-category') as HTMLSelectElement | null;
+    const newType = document.getElementById('new-exercise-type') as HTMLSelectElement | null;
+    const newMuscles = document.getElementById('new-exercise-muscles') as HTMLInputElement | null;
+    const newEquipment = document.getElementById('new-exercise-equipment') as HTMLInputElement | null;
+    const newSets = document.getElementById('new-exercise-sets') as HTMLInputElement | null;
+    const newReps = document.getElementById('new-exercise-reps') as HTMLInputElement | null;
+    const newRest = document.getElementById('new-exercise-rest') as HTMLInputElement | null;
+    const saveExerciseBtn = document.getElementById('save-exercise-btn') as HTMLButtonElement | null;
+    const cancelExerciseBtn = document.getElementById('cancel-exercise-btn') as HTMLButtonElement | null;
 
     search?.addEventListener('input', (e) => {
         librarySearchTerm = (e.target as HTMLInputElement).value.toLowerCase();
@@ -378,13 +516,72 @@ function setupExerciseLibrary(): void {
         const isHidden = libraryList.style.display === 'none';
         libraryList.style.display = isHidden ? 'grid' : 'none';
     });
+
+    saveExerciseBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!newName || !newCategory) return;
+        const name = newName.value.trim();
+        const category = (newCategory.value as ProgramType) || 'push';
+        if (!name) {
+            alert('Exercise name is required.');
+            return;
+        }
+        const muscles = (newMuscles?.value || '')
+            .split(',')
+            .map(m => m.trim())
+            .filter(Boolean);
+        const equipment = newEquipment?.value.trim() || undefined;
+        const exerciseType = (newType?.value || 'compound') as ExerciseType;
+        const setsVal = parseInt(newSets?.value || '', 10);
+        const restVal = parseInt(newRest?.value || '', 10);
+        const repsVal = newReps?.value.trim() || '10';
+
+        try {
+            if (editingLibraryExerciseId) {
+                await updateExerciseDefinition(editingLibraryExerciseId, {
+                    name,
+                    category,
+                    muscles: muscles.length ? muscles : undefined,
+                    equipment,
+                    exerciseType,
+                    sets: Number.isFinite(setsVal) && setsVal > 0 ? setsVal : undefined,
+                    reps: repsVal,
+                    restTime: Number.isFinite(restVal) && restVal >= 0 ? restVal : undefined
+                });
+                showLiveToast(`${name} updated`);
+            } else {
+                await addExerciseDefinition({
+                    name,
+                    category,
+                    muscles: muscles.length ? muscles : undefined,
+                    equipment,
+                    exerciseType,
+                    sets: Number.isFinite(setsVal) && setsVal > 0 ? setsVal : 3,
+                    reps: repsVal,
+                    restTime: Number.isFinite(restVal) && restVal >= 0 ? restVal : 60
+                });
+                showLiveToast(`${name} added to your library`);
+            }
+            setExerciseLibrary(getExerciseLibraryItems());
+            resetExerciseForm();
+        } catch (error) {
+            console.error('Failed to save exercise', error);
+        }
+    });
+
+    cancelExerciseBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        resetExerciseForm();
+    });
+
+    resetExerciseForm();
 }
 
 function renderExerciseLibrary(): void {
     const container = document.getElementById('exercise-library-list');
     if (!container) return;
 
-    const filtered = EXERCISE_LIBRARY.filter(ex => {
+    const filtered = exerciseLibrary.filter(ex => {
         const matchCategory = libraryFilterCategory === 'all' || ex.category === libraryFilterCategory;
         const term = librarySearchTerm.trim().toLowerCase();
         const matchSearch = !term || ex.name.toLowerCase().includes(term) || (ex.muscles || []).some(m => m.toLowerCase().includes(term)) || (ex.equipment || '').toLowerCase().includes(term);
@@ -411,7 +608,10 @@ function renderExerciseLibrary(): void {
                         ${ex.equipment ? `<span class="chip subtle">${ex.equipment}</span>` : ''}
                     </div>
                 </div>
-                <button class="btn btn-secondary btn-small library-add-btn" data-exercise-id="${ex.id}" type="button">+ Add</button>
+                <div class="library-actions">
+                    <button class="btn btn-secondary btn-small library-add-btn" data-exercise-id="${ex.id}" type="button">+ Add</button>
+                    <button class="btn btn-ghost btn-small library-edit-btn" data-exercise-id="${ex.id}" type="button">Edit</button>
+                </div>
             </div>
         `;
     }).join('');
@@ -422,6 +622,37 @@ function renderExerciseLibrary(): void {
             if (id) {
                 addExerciseFromLibrary(id);
             }
+        });
+    });
+
+    container.querySelectorAll('.library-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = (e.currentTarget as HTMLElement).getAttribute('data-exercise-id');
+            const target = exerciseLibrary.find(ex => ex.id === id);
+            if (!id || !target) return;
+            editingLibraryExerciseId = id;
+            const newName = document.getElementById('new-exercise-name') as HTMLInputElement | null;
+            const newCategory = document.getElementById('new-exercise-category') as HTMLSelectElement | null;
+            const newType = document.getElementById('new-exercise-type') as HTMLSelectElement | null;
+            const newMuscles = document.getElementById('new-exercise-muscles') as HTMLInputElement | null;
+            const newEquipment = document.getElementById('new-exercise-equipment') as HTMLInputElement | null;
+            const newSets = document.getElementById('new-exercise-sets') as HTMLInputElement | null;
+            const newReps = document.getElementById('new-exercise-reps') as HTMLInputElement | null;
+            const newRest = document.getElementById('new-exercise-rest') as HTMLInputElement | null;
+            const saveBtn = document.getElementById('save-exercise-btn') as HTMLButtonElement | null;
+            const cancelBtn = document.getElementById('cancel-exercise-btn') as HTMLButtonElement | null;
+
+            if (newName) newName.value = target.name;
+            if (newCategory) newCategory.value = target.category;
+            if (newType) newType.value = target.exerciseType ?? 'compound';
+            if (newMuscles) newMuscles.value = (target.muscles || []).join(', ');
+            if (newEquipment) newEquipment.value = target.equipment ?? '';
+            if (newSets) newSets.value = String(target.sets ?? 3);
+            if (newReps) newReps.value = typeof target.reps === 'number' ? String(target.reps) : (target.reps ?? '10');
+            if (newRest) newRest.value = String(target.restTime ?? 60);
+            if (saveBtn) saveBtn.textContent = 'Update Exercise';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            newName?.focus();
         });
     });
 }
@@ -569,7 +800,7 @@ function renderExerciseOptions(): void {
     if (!select) return;
 
     const category = (categorySelect?.value as ProgramType) || '';
-    const options = EXERCISE_LIBRARY.filter(ex => !category || ex.category === category);
+    const options = exerciseLibrary.filter(ex => !category || ex.category === category);
 
     select.innerHTML = `<option value="">Pick exercise...</option>` + options
         .map(ex => `<option value="${ex.id}">${ex.name} (${ex.category})</option>`)
@@ -583,7 +814,7 @@ function builderFilterExercises(term: string): void {
 
     const category = (categorySelect?.value as ProgramType) || '';
     const normalized = term.trim().toLowerCase();
-    const options = EXERCISE_LIBRARY.filter(ex => {
+    const options = exerciseLibrary.filter(ex => {
         const matchCategory = !category || ex.category === category;
         const matchSearch = !normalized || ex.name.toLowerCase().includes(normalized) || (ex.muscles || []).some(m => m.toLowerCase().includes(normalized));
         return matchCategory && matchSearch;
@@ -637,7 +868,7 @@ function addExerciseToBuilder(): void {
         return;
     }
 
-    const template = EXERCISE_LIBRARY.find(ex => ex.id === exerciseId);
+    const template = exerciseLibrary.find(ex => ex.id === exerciseId);
     const sets = parseInt(setsInput.value || '', 10) || template?.sets || 3;
     const reps = repsInput.value.trim() || String(template?.reps ?? 10);
     const restTime = template?.restTime ?? 75;
@@ -661,7 +892,7 @@ function addExerciseToBuilder(): void {
 }
 
 function addExerciseFromLibrary(exerciseId: string): void {
-    const template = EXERCISE_LIBRARY.find(ex => ex.id === exerciseId);
+    const template = exerciseLibrary.find(ex => ex.id === exerciseId);
     if (!template) return;
     const setsInput = document.getElementById('builder-sets') as HTMLInputElement | null;
     const repsInput = document.getElementById('builder-reps') as HTMLInputElement | null;
@@ -718,11 +949,13 @@ function renderBuilderExercises(): void {
                 <div class="builder-exercise-meta">
                     <span class="builder-chip">${ex.sets} sets</span>
                     <span class="builder-chip">${ex.reps} reps</span>
+                    <span class="builder-chip">${ex.restTime ?? 0}s rest</span>
                 </div>
             </div>
             <div class="builder-exercise-actions">
                 <input type="number" class="builder-set-input" data-index="${idx}" min="1" value="${ex.sets}">
                 <input type="text" class="builder-reps-input" data-index="${idx}" value="${ex.reps}">
+                <input type="number" class="builder-rest-input" data-index="${idx}" min="0" value="${ex.restTime ?? 60}" title="Rest (sec)">
                 <button class="btn btn-secondary btn-small remove-builder-exercise" data-index="${idx}" type="button">Remove</button>
             </div>
         </div>
@@ -743,6 +976,16 @@ function renderBuilderExercises(): void {
             const target = e.target as HTMLInputElement;
             const index = parseInt(target.getAttribute('data-index') || '0', 10);
             builderExercises[index].reps = target.value || builderExercises[index].reps;
+            renderBuilderExercises();
+        });
+    });
+
+    list.querySelectorAll('.builder-rest-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const target = e.target as HTMLInputElement;
+            const index = parseInt(target.getAttribute('data-index') || '0', 10);
+            const value = Math.max(0, parseInt(target.value || '0', 10));
+            builderExercises[index].restTime = value;
             renderBuilderExercises();
         });
     });
@@ -849,13 +1092,15 @@ function startWorkout(programId: string): void {
 
     // Create active workout state
     const activeWorkout = createActiveWorkout(program);
-    saveActiveWorkout(activeWorkout);
-    workoutStartTime = new Date(activeWorkout.startTime);
+    const normalized = normalizeActiveWorkoutTiming(activeWorkout);
+    saveActiveWorkout(normalized);
+    workoutStartTime = new Date(normalized.startTime);
 
     // Show active workout screen
     showActiveWorkoutScreen(program.displayName);
-    renderExercises(program, activeWorkout);
+    renderExercises(program, normalized);
     attachSetEventListeners();
+    startResting(INITIAL_SESSION_REST_SECONDS, WARMUP_LABEL);
     startWorkoutTimer();
 }
 
@@ -863,21 +1108,27 @@ function resumeWorkout(activeWorkout: ActiveWorkout): void {
     const program = getWorkoutProgramById(activeWorkout.programId);
     if (!program) return;
 
-    workoutStartTime = new Date(activeWorkout.startTime);
-    showActiveWorkoutScreen(activeWorkout.programName);
-    renderExercises(program, activeWorkout);
+    const normalized = normalizeActiveWorkoutTiming(activeWorkout);
+    saveActiveWorkout(normalized);
+
+    workoutStartTime = new Date(normalized.startTime);
+    showActiveWorkoutScreen(normalized.programName);
+    renderExercises(program, normalized);
     attachSetEventListeners();
 
-    if (!activeWorkout.paused) {
+    const pauseBtn = document.getElementById('pause-workout-btn');
+    if (pauseBtn) pauseBtn.textContent = normalized.paused ? '▶️ Resume' : '⏸️ Pause';
+
+    if (!normalized.paused) {
         startWorkoutTimer();
         
-        if (activeWorkout.isResting && activeWorkout.restStartTime && activeWorkout.restDuration) {
-            const restStart = new Date(activeWorkout.restStartTime).getTime();
+        if (normalized.isResting && normalized.restStartTime && normalized.restDuration) {
+            const restStart = new Date(normalized.restStartTime).getTime();
             const elapsed = Date.now() - restStart;
-            const remaining = activeWorkout.restDuration - elapsed;
+            const remaining = normalized.restDuration - elapsed;
             
             if (remaining > 0) {
-                startRestTimer(Math.floor(remaining / 1000));
+                startRestTimer(Math.floor(remaining / 1000), normalized.restLabel ?? REST_LABEL_DEFAULT);
             } else {
                 stopResting();
             }
@@ -893,6 +1144,7 @@ function showActiveWorkoutScreen(programName: string): void {
     if (selection) selection.style.display = 'none';
     if (activeScreen) activeScreen.style.display = 'block';
     if (programNameEl) programNameEl.textContent = programName;
+    toggleLiveHero(false);
 }
 
 function hideActiveWorkoutScreen(): void {
@@ -901,56 +1153,145 @@ function hideActiveWorkoutScreen(): void {
 
     if (selection) selection.style.display = 'block';
     if (activeScreen) activeScreen.style.display = 'none';
+    toggleLiveHero(true);
 }
 
 function renderExercises(program: WorkoutProgram, activeWorkout: ActiveWorkout): void {
     const container = document.getElementById('exercise-list');
     if (!container) return;
 
+    renderCompletedChips(program, activeWorkout);
+
     container.innerHTML = program.exercises.map((exercise, index) => {
         const activeExercise = activeWorkout.exercises[index];
         const isActive = index === activeWorkout.currentExerciseIndex;
         const allCompleted = activeExercise.sets.every(s => s.completed);
+        const completedSummary = `${activeExercise.sets.filter(s => s.completed).length}/${exercise.sets} done`;
 
         return `
-            <div class="exercise-card ${isActive ? 'active' : ''} ${allCompleted ? 'completed' : ''}" data-exercise-index="${index}">
+            <div class="exercise-card ${isActive ? 'active' : ''} ${allCompleted ? 'completed collapsed-completed' : ''}" data-exercise-index="${index}" ${allCompleted ? 'style="display: none;"' : ''}>
                 <div class="exercise-card-header">
                     <div>
                         <div class="exercise-name">${exercise.name}</div>
                         <div class="exercise-info">${exercise.sets} sets × ${exercise.reps} reps • ${exercise.restTime}s rest</div>
                         ${exercise.notes ? `<div class="exercise-info"><em>${exercise.notes}</em></div>` : ''}
                     </div>
-                    <span class="exercise-badge">${activeExercise.sets.filter(s => s.completed).length}/${exercise.sets}</span>
+                    <div class="exercise-header-actions">
+                        <span class="exercise-badge">${completedSummary}</span>
+                        ${allCompleted ? `<button class="btn btn-secondary btn-small toggle-sets-btn" data-exercise-index="${index}">View sets</button>` : ''}
+                    </div>
                 </div>
-                <div class="sets-grid">
+                <div class="sets-grid" data-exercise-index="${index}" ${allCompleted ? 'style="display: none;"' : ''}>
                     ${activeExercise.sets.map((set, setIndex) => renderSet(exercise, set, setIndex, index, activeWorkout)).join('')}
                 </div>
             </div>
         `;
     }).join('');
+
+    // Bind toggles for completed exercises
+    container.querySelectorAll<HTMLButtonElement>('.toggle-sets-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const exIndex = parseInt(btn.getAttribute('data-exercise-index') || '0');
+            const grid = container.querySelector(`.sets-grid[data-exercise-index="${exIndex}"]`) as HTMLElement | null;
+            if (!grid) return;
+            const isHidden = grid.style.display === 'none';
+            grid.style.display = isHidden ? 'grid' : 'none';
+            btn.textContent = isHidden ? 'Hide sets' : 'View sets';
+        });
+    });
+}
+
+function renderCompletedChips(program: WorkoutProgram, activeWorkout: ActiveWorkout): void {
+    const chipContainer = document.getElementById('completed-exercise-chips') as HTMLElement | null;
+    if (!chipContainer) return;
+
+    const completed = program.exercises
+        .map((exercise, index) => ({ exercise, index, active: activeWorkout.exercises[index] }))
+        .filter(item => item.active.sets.every(s => s.completed));
+
+    if (completed.length === 0) {
+        chipContainer.style.display = 'none';
+        chipContainer.innerHTML = '';
+        return;
+    }
+
+    chipContainer.style.display = 'flex';
+    chipContainer.innerHTML = completed.map(item => `
+        <button class="completed-chip" data-exercise-index="${item.index}">
+            ${item.exercise.name} • ${item.exercise.sets}×${item.exercise.reps}
+        </button>
+    `).join('');
+
+    chipContainer.querySelectorAll<HTMLButtonElement>('.completed-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const exIndex = parseInt(btn.getAttribute('data-exercise-index') || '0');
+            const card = document.querySelector(`.exercise-card[data-exercise-index="${exIndex}"]`) as HTMLElement | null;
+            const grid = card?.querySelector('.sets-grid') as HTMLElement | null;
+            const toggle = card?.querySelector('.toggle-sets-btn') as HTMLButtonElement | null;
+            if (card) {
+                card.style.display = 'block';
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            if (grid) {
+                grid.style.display = 'grid';
+            }
+            if (toggle) {
+                toggle.textContent = 'Hide sets';
+            }
+        });
+    });
 }
 
 function renderSet(exercise: Exercise, set: ExerciseSet, setIndex: number, exerciseIndex: number, activeWorkout: ActiveWorkout): string {
     const isActive = exerciseIndex === activeWorkout.currentExerciseIndex && 
                      setIndex === activeWorkout.exercises[exerciseIndex].currentSet &&
                      !set.completed;
+    const hasStarted = set.completed || set.partial || set.actualReps !== undefined || set.weight !== undefined || set.completedAt !== undefined;
+    const isPending = !hasStarted && !isActive;
     
-    // Get last used weight for this exercise
-    const lastWeight = getLastUsedWeight(exercise.id);
+    const lastWeight = set.weight ?? getPreferredWeight(exercise.id);
+    const partialSelected = Boolean(set.partial) || set.actualReps !== undefined;
+    const targetReps = getTargetReps(exercise.reps);
     
     return `
-        <div class="set-item ${set.completed ? 'completed' : ''} ${isActive ? 'active' : ''}" 
+        <div class="set-item ${set.completed ? 'completed' : ''} ${isActive ? 'active' : ''} ${isPending ? 'pending' : ''}" 
              data-exercise-index="${exerciseIndex}" 
              data-set-index="${setIndex}">
-            <div class="set-number">Set ${set.setNumber}</div>
-            <div class="set-reps">${exercise.reps} reps</div>
+            <div class="set-header">
+                <div class="set-title">Set ${set.setNumber} • ${exercise.reps} reps</div>
+                ${set.completed ? `<span class="set-status-tag">${set.partial ? (set.actualReps && targetReps ? `Partial (${set.actualReps}/${targetReps})` : 'Partial') : 'All reps'}</span>` : ''}
+            </div>
             ${!set.completed ? `
-                <input type="number" 
-                       class="set-weight-input" 
-                       placeholder="Weight (lbs)" 
-                       value="${lastWeight || ''}"
-                       data-exercise-index="${exerciseIndex}" 
-                       data-set-index="${setIndex}">
+                <div class="set-completion-toggle">
+                    <label>
+                        <input type="radio" name="set-status-${exerciseIndex}-${setIndex}" value="full" ${!partialSelected ? 'checked' : ''}/>
+                        All reps
+                    </label>
+                    <label>
+                        <input type="radio" name="set-status-${exerciseIndex}-${setIndex}" value="partial" ${partialSelected ? 'checked' : ''}/>
+                        Partial
+                    </label>
+                </div>
+                <div class="partial-rep-row" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}" style="${partialSelected ? '' : 'display:none;'}">
+                    ${(targetReps ? Array.from({ length: targetReps }, (_, i) => {
+                        const rep = i + 1;
+                        const active = set.actualReps === rep ? 'active' : '';
+                        return `<button class="partial-rep-btn ${active}" type="button" data-reps="${rep}" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}">${rep}</button>`;
+                    }).join('') : '')}
+                </div>
+                <div class="set-weight-row">
+                    <input type="number" 
+                           class="set-weight-input" 
+                           placeholder="Weight (lbs)" 
+                           value="${lastWeight ?? ''}"
+                           data-exercise-index="${exerciseIndex}" 
+                           data-set-index="${setIndex}">
+                    <div class="set-weight-quick">
+                        <button class="quick-add-weight" type="button" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}" data-add="10">+10</button>
+                        <button class="quick-add-weight" type="button" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}" data-add="5">+5</button>
+                        <button class="quick-add-weight" type="button" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}" data-add="2.5">+2.5</button>
+                    </div>
+                </div>
                 <button class="btn btn-primary btn-small set-complete-btn" 
                         data-exercise-index="${exerciseIndex}" 
                         data-set-index="${setIndex}"
@@ -958,8 +1299,10 @@ function renderSet(exercise: Exercise, set: ExerciseSet, setIndex: number, exerc
                     ${isActive ? 'Complete Set' : 'Locked'}
                 </button>
             ` : `
-                <div style="color: var(--success-color); margin-top: 0.5rem;">✓ Done</div>
-                ${set.weight ? `<div style="font-size: 0.75rem; color: var(--text-secondary);">${set.weight} lbs</div>` : ''}
+                <div class="set-complete-meta">
+                    <div class="set-complete-line">✓ Done${set.partial ? set.actualReps && targetReps ? ` (${set.actualReps}/${targetReps})` : ' (partial)' : ''}</div>
+                    ${set.weight ? `<div class="set-weight-label">${set.weight} lbs</div>` : ''}
+                </div>
             `}
         </div>
     `;
@@ -990,6 +1333,43 @@ function attachSetEventListeners(): void {
             completeSet(exerciseIndex, setIndex);
         });
     });
+
+    const quickButtons = document.querySelectorAll<HTMLButtonElement>('.quick-add-weight');
+    quickButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const exerciseIndex = btn.getAttribute('data-exercise-index');
+            const setIndex = btn.getAttribute('data-set-index');
+            const delta = Number(btn.getAttribute('data-add') || '0');
+            if (!exerciseIndex || !setIndex) return;
+            const input = document.querySelector<HTMLInputElement>(
+                `.set-weight-input[data-exercise-index="${exerciseIndex}"][data-set-index="${setIndex}"]`
+            );
+            if (!input) return;
+            const current = Number(input.value) || 0;
+            const next = current + delta;
+            input.value = next.toString();
+        });
+    });
+
+    const radios = document.querySelectorAll<HTMLInputElement>('.set-completion-toggle input[type="radio"]');
+    radios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            const exerciseIndex = parseInt(radio.name.split('-')[2] || '0');
+            const setIndex = parseInt(radio.name.split('-')[3] || '0');
+            const mode = radio.value === 'partial' ? 'partial' : 'full';
+            handleSetModeChange(exerciseIndex, setIndex, mode);
+        });
+    });
+
+    const partialButtons = document.querySelectorAll<HTMLButtonElement>('.partial-rep-btn');
+    partialButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const exerciseIndex = parseInt(btn.getAttribute('data-exercise-index') || '0');
+            const setIndex = parseInt(btn.getAttribute('data-set-index') || '0');
+            const reps = parseInt(btn.getAttribute('data-reps') || '0');
+            handlePartialRepsSelection(exerciseIndex, setIndex, reps);
+        });
+    });
 }
 
 function completeSet(exerciseIndex: number, setIndex: number): void {
@@ -1004,16 +1384,26 @@ function completeSet(exerciseIndex: number, setIndex: number): void {
         `.set-weight-input[data-exercise-index="${exerciseIndex}"][data-set-index="${setIndex}"]`
     ) as HTMLInputElement;
     const weight = weightInput?.value ? parseFloat(weightInput.value) : undefined;
+    const statusRadios = document.getElementsByName(`set-status-${exerciseIndex}-${setIndex}`) as NodeListOf<HTMLInputElement>;
+    const selectedStatus = Array.from(statusRadios).find(r => r.checked)?.value ?? 'full';
+    const partial = selectedStatus === 'partial';
+    const partialButtons = document.querySelectorAll<HTMLButtonElement>(
+        `.partial-rep-btn[data-exercise-index="${exerciseIndex}"][data-set-index="${setIndex}"]`
+    );
+    const activePartial = Array.from(partialButtons).find(btn => btn.classList.contains('active'));
+    const partialReps = partial ? (activePartial ? parseInt(activePartial.getAttribute('data-reps') || '0') || undefined : undefined) : undefined;
 
     // Mark set as completed
     activeWorkout.exercises[exerciseIndex].sets[setIndex].completed = true;
     activeWorkout.exercises[exerciseIndex].sets[setIndex].completedAt = new Date().toISOString();
     activeWorkout.exercises[exerciseIndex].sets[setIndex].weight = weight;
+    activeWorkout.exercises[exerciseIndex].sets[setIndex].partial = partial;
+    activeWorkout.exercises[exerciseIndex].sets[setIndex].actualReps = partialReps;
 
     // Save weight to memory for future use
     if (weight) {
         const exercise = program.exercises[exerciseIndex];
-        saveLastUsedWeight(exercise.id, weight);
+        updateWeightCaches(exercise.id, weight);
     }
 
     // Move to next set
@@ -1041,25 +1431,28 @@ function completeSet(exerciseIndex: number, setIndex: number): void {
     refreshLiveWorkout();
 }
 
-function startResting(seconds: number): void {
+function startResting(seconds: number, label: string = REST_LABEL_DEFAULT): void {
     const activeWorkout = getActiveWorkout();
     if (!activeWorkout) return;
 
     activeWorkout.isResting = true;
     activeWorkout.restStartTime = new Date().toISOString();
     activeWorkout.restDuration = seconds * 1000;
+    activeWorkout.restLabel = label;
     saveActiveWorkout(activeWorkout);
 
-    startRestTimer(seconds);
+    startRestTimer(seconds, label);
 }
 
-function startRestTimer(seconds: number): void {
+function startRestTimer(seconds: number, label: string = REST_LABEL_DEFAULT): void {
     const container = document.getElementById('rest-timer-container');
     const countdown = document.getElementById('rest-countdown');
+    const title = document.getElementById('rest-title');
     
     if (!container || !countdown) return;
 
     container.style.display = 'block';
+    if (title) title.textContent = label;
     restEndTime = Date.now() + (seconds * 1000);
 
     // Clear existing timer
@@ -1075,12 +1468,62 @@ function startRestTimer(seconds: number): void {
         countdown.textContent = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
         if (remaining === 0) {
+            playRestBeep();
             stopResting();
         }
     };
 
     updateRestDisplay();
     restTimer = window.setInterval(updateRestDisplay, 100);
+}
+
+function stopRestBeep(): void {
+    if (restBeepSource) {
+        restBeepSource.stop();
+        restBeepSource.disconnect();
+        restBeepSource = null;
+    }
+}
+
+function playRestBeep(): void {
+    try {
+        stopRestBeep();
+        restBeepCtx = restBeepCtx || new AudioContext();
+
+        const ctx = restBeepCtx;
+        const duration = 0.12; // seconds per beep
+        const gap = 0.08;
+        const pause = 0.4; // between triplets
+        const frequency = 1050;
+        const now = ctx.currentTime;
+
+        const scheduleBeep = (start: number) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = frequency;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            gain.gain.setValueAtTime(0.2, start);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+            osc.start(start);
+            osc.stop(start + duration + 0.05);
+        };
+
+        // Three beeps, pause, three beeps
+        let t = now;
+        for (let i = 0; i < 3; i++) {
+            scheduleBeep(t);
+            t += duration + gap;
+        }
+        t += pause;
+        for (let i = 0; i < 3; i++) {
+            scheduleBeep(t);
+            t += duration + gap;
+        }
+    } catch (error) {
+        console.error('Unable to play rest beep', error);
+    }
 }
 
 function stopResting(): void {
@@ -1097,10 +1540,12 @@ function stopResting(): void {
         activeWorkout.isResting = false;
         activeWorkout.restStartTime = undefined;
         activeWorkout.restDuration = undefined;
+        activeWorkout.restLabel = undefined;
         saveActiveWorkout(activeWorkout);
     }
 
     restEndTime = null;
+    stopRestBeep();
 }
 
 function skipRest(): void {
@@ -1127,12 +1572,11 @@ function startWorkoutTimer(): void {
     if (workoutTimer) clearInterval(workoutTimer);
 
     const updateDuration = () => {
-        if (!workoutStartTime) return;
-        
-        const elapsed = Date.now() - workoutStartTime.getTime();
-        const minutes = Math.floor(elapsed / 60000);
-        const seconds = Math.floor((elapsed % 60000) / 1000);
-        durationEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        const activeWorkout = getActiveWorkout();
+        if (!workoutStartTime || !activeWorkout) return;
+
+        const { totalMs } = computeWorkoutDurations(activeWorkout);
+        durationEl.textContent = formatMsToClock(totalMs);
     };
 
     updateDuration();
@@ -1153,23 +1597,29 @@ function togglePauseWorkout(): void {
     const pauseBtn = document.getElementById('pause-workout-btn');
     if (!pauseBtn) return;
 
-    activeWorkout.paused = !activeWorkout.paused;
-    saveActiveWorkout(activeWorkout);
-
-    if (activeWorkout.paused) {
+    if (!activeWorkout.paused) {
+        activeWorkout.paused = true;
+        activeWorkout.pauseStartedAt = new Date().toISOString();
+        saveActiveWorkout(activeWorkout);
         stopWorkoutTimer();
         if (activeWorkout.isResting) {
             stopResting();
         }
         pauseBtn.textContent = '▶️ Resume';
     } else {
+        const pauseStarted = activeWorkout.pauseStartedAt ? new Date(activeWorkout.pauseStartedAt).getTime() : Date.now();
+        const pausedMs = Math.max(0, Date.now() - pauseStarted);
+        activeWorkout.totalPausedMs = (activeWorkout.totalPausedMs ?? 0) + pausedMs;
+        activeWorkout.paused = false;
+        activeWorkout.pauseStartedAt = undefined;
+        saveActiveWorkout(activeWorkout);
         startWorkoutTimer();
         if (activeWorkout.isResting && activeWorkout.restStartTime && activeWorkout.restDuration) {
             const restStart = new Date(activeWorkout.restStartTime).getTime();
             const elapsed = Date.now() - restStart;
             const remaining = Math.max(0, activeWorkout.restDuration - elapsed);
             if (remaining > 0) {
-                startRestTimer(Math.floor(remaining / 1000));
+                startRestTimer(Math.floor(remaining / 1000), activeWorkout.restLabel ?? REST_LABEL_DEFAULT);
             }
         }
         pauseBtn.textContent = '⏸️ Pause';
@@ -1185,19 +1635,18 @@ async function finishWorkout(): Promise<void> {
 
     if (!confirm('Finish this workout?')) return;
 
-    // Calculate total duration
-    const endTime = new Date();
-    const startTime = new Date(activeWorkout.startTime);
-    const durationMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / 60000);
+    const { totalMs, activeMs } = computeWorkoutDurations(activeWorkout);
+    const durationMinutes = Math.floor(totalMs / 60000);
+    const activeMinutes = Math.floor(activeMs / 60000);
 
     const completedSets = activeWorkout.exercises.flatMap(ex => ex.sets.filter(s => s.completed)).length;
     const totalSets = activeWorkout.exercises.flatMap(ex => ex.sets).length;
 
     // Format a simple summary for the notes
-    const notesSummary = `Live training - ${new Date(activeWorkout.startTime).toLocaleTimeString()} | ${activeWorkout.programName} | Duration: ${durationMinutes} min | Sets: ${completedSets}/${totalSets}`;
+    const notesSummary = `Live training - ${new Date(activeWorkout.startTime).toLocaleTimeString()} | ${activeWorkout.programName} | Duration: ${durationMinutes} min (active ${activeMinutes} min) | Sets: ${completedSets}/${totalSets}`;
 
     // Build structured exercises with timing and set detail
-    const structuredExercises = activeWorkout.exercises.map((ex, idx) => {
+	    const structuredExercises = activeWorkout.exercises.map((ex, idx) => {
         const programExercise = program.exercises.find(e => e.id === ex.exerciseId);
         const elapsedMs = calculateExerciseElapsedMs(ex.sets);
 
@@ -1268,6 +1717,7 @@ function resetWorkout(): void {
     showActiveWorkoutScreen(program.displayName);
     renderExercises(program, freshWorkout);
     attachSetEventListeners();
+    startResting(INITIAL_SESSION_REST_SECONDS, WARMUP_LABEL);
     startWorkoutTimer();
 
     // Reset pause button label
@@ -1294,6 +1744,55 @@ function calculateExerciseElapsedMs(sets: ExerciseSet[]): number | undefined {
     return Math.max(0, latest - earliest);
 }
 
+function handleSetModeChange(exerciseIndex: number, setIndex: number, mode: 'full' | 'partial'): void {
+    const activeWorkout = getActiveWorkout();
+    if (!activeWorkout) return;
+
+    const targetSet = activeWorkout.exercises[exerciseIndex]?.sets[setIndex];
+    if (!targetSet) return;
+
+    if (mode === 'full') {
+        targetSet.partial = false;
+        targetSet.actualReps = undefined;
+    } else {
+        targetSet.partial = true;
+    }
+
+    saveActiveWorkout(activeWorkout);
+
+    const partialRow = document.querySelector<HTMLElement>(`.partial-rep-row[data-exercise-index="${exerciseIndex}"][data-set-index="${setIndex}"]`);
+    if (partialRow) {
+        partialRow.style.display = mode === 'partial' ? '' : 'none';
+    }
+}
+
+function handlePartialRepsSelection(exerciseIndex: number, setIndex: number, reps: number): void {
+    const activeWorkout = getActiveWorkout();
+    if (!activeWorkout) return;
+    const targetSet = activeWorkout.exercises[exerciseIndex]?.sets[setIndex];
+    if (!targetSet) return;
+
+    targetSet.partial = true;
+    targetSet.actualReps = reps;
+    saveActiveWorkout(activeWorkout);
+
+    document.querySelectorAll<HTMLButtonElement>(
+        `.partial-rep-btn[data-exercise-index="${exerciseIndex}"][data-set-index="${setIndex}"]`
+    ).forEach(btn => {
+        const btnReps = parseInt(btn.getAttribute('data-reps') || '0');
+        if (btnReps === reps) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    const partialRadio = document.querySelector<HTMLInputElement>(`input[name="set-status-${exerciseIndex}-${setIndex}"][value="partial"]`);
+    if (partialRadio) {
+        partialRadio.checked = true;
+    }
+}
+
 // Helper: create a fresh active workout state from a program
 function createActiveWorkout(program: WorkoutProgram): ActiveWorkout {
     return {
@@ -1310,6 +1809,42 @@ function createActiveWorkout(program: WorkoutProgram): ActiveWorkout {
         })),
         currentExerciseIndex: 0,
         isResting: false,
-        paused: false
+        paused: false,
+        totalPausedMs: 0
     };
+}
+
+function normalizeActiveWorkoutTiming(activeWorkout: ActiveWorkout): ActiveWorkout {
+    const paused = Boolean(activeWorkout.paused);
+    const totalPausedMs = activeWorkout.totalPausedMs ?? 0;
+    let pauseStartedAt: string | undefined = activeWorkout.pauseStartedAt;
+    if (!paused) {
+        pauseStartedAt = undefined;
+    } else if (!pauseStartedAt) {
+        pauseStartedAt = new Date().toISOString();
+    }
+    return {
+        ...activeWorkout,
+        paused,
+        totalPausedMs,
+        pauseStartedAt
+    };
+}
+
+function computeWorkoutDurations(activeWorkout: ActiveWorkout): { totalMs: number; activeMs: number } {
+    const startMs = new Date(activeWorkout.startTime).getTime();
+    const now = Date.now();
+    const totalMs = Math.max(0, now - startMs);
+    const pausedAccum = activeWorkout.totalPausedMs ?? 0;
+    const currentPaused = activeWorkout.paused && activeWorkout.pauseStartedAt
+        ? Math.max(0, now - new Date(activeWorkout.pauseStartedAt).getTime())
+        : 0;
+    const activeMs = Math.max(0, totalMs - pausedAccum - currentPaused);
+    return { totalMs, activeMs };
+}
+
+function formatMsToClock(ms: number): string {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }

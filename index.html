@@ -82,7 +82,7 @@
 
         <!-- Live Workout Page -->
         <section id="live-workout" class="page live-workout-page">
-            <div class="live-hero">
+            <div class="live-hero" id="live-hero">
               <div class="live-hero-text">
                 <p class="eyebrow">Live Training</p>
                 <h2>Build & Run Sessions</h2>
@@ -172,6 +172,61 @@
                       </div>
                       <button id="library-toggle" class="btn btn-secondary mobile-only" type="button">Toggle Library</button>
                     </div>
+                    <div class="library-new-exercise">
+                      <div class="library-new-row">
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-name">Name</label>
+                          <input type="text" id="new-exercise-name" placeholder="e.g., Bulgarian Split Squat" />
+                        </div>
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-category">Category</label>
+                          <select id="new-exercise-category">
+                            <option value="push">Push</option>
+                            <option value="pull">Pull</option>
+                            <option value="legs">Legs</option>
+                          </select>
+                        </div>
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-type">Type</label>
+                          <select id="new-exercise-type">
+                            <option value="compound">Compound</option>
+                            <option value="power">Power</option>
+                            <option value="hypertrophy">Hypertrophy</option>
+                            <option value="flexibility">Flexibility</option>
+                            <option value="cardio">Cardio</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="library-new-row">
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-sets">Default Sets</label>
+                          <input type="number" id="new-exercise-sets" min="1" value="3" />
+                        </div>
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-reps">Default Reps</label>
+                          <input type="text" id="new-exercise-reps" placeholder="8-12" value="10" />
+                        </div>
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-rest">Rest (sec)</label>
+                          <input type="number" id="new-exercise-rest" min="0" value="60" />
+                        </div>
+                      </div>
+                      <div class="library-new-row">
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-muscles">Muscles (comma separated)</label>
+                          <input type="text" id="new-exercise-muscles" placeholder="Glutes, Hamstrings" />
+                        </div>
+                        <div class="library-input">
+                          <label class="label-caps" for="new-exercise-equipment">Equipment</label>
+                          <input type="text" id="new-exercise-equipment" placeholder="Dumbbells, Bench" />
+                        </div>
+                        <div class="library-input library-save">
+                          <label class="label-caps">&nbsp;</label>
+                          <button id="save-exercise-btn" class="btn btn-primary" type="button">Save Exercise</button>
+                          <button id="cancel-exercise-btn" class="btn btn-ghost" type="button" style="display: none;">Cancel Edit</button>
+                        </div>
+                      </div>
+                    </div>
                     <div class="library-filters">
                       <input type="text" id="library-search" placeholder="Search exercises…" />
                       <div class="library-chips">
@@ -200,7 +255,7 @@
                 <!-- Rest Timer (shown when resting) -->
                 <div id="rest-timer-container" class="rest-timer-container" style="display: none;">
                     <div class="rest-timer">
-                        <h3>Rest Time</h3>
+                        <h3 id="rest-title">Rest Time</h3>
                         <div id="rest-countdown" class="rest-countdown">01:30</div>
                         <div class="rest-controls">
                             <button id="add-rest-time-btn" class="btn btn-secondary">+30s</button>
@@ -217,6 +272,7 @@
                             <span class="timer-icon">⏱️</span>
                             <span id="workout-duration" class="timer-value-inline">00:00</span>
                         </div>
+                        <div class="completed-exercises-chips" id="completed-exercise-chips" style="display: none;"></div>
                     </div>
                     <div class="workout-controls-inline">
                         <button id="reset-workout-btn" class="btn btn-secondary btn-small">🔄 Reset</button>
@@ -224,7 +280,6 @@
                         <button id="end-workout-btn" class="btn btn-danger btn-small">✓ Finish</button>
                     </div>
                 </div>
-
                 <!-- Exercise List -->
                 <div id="exercise-list" class="exercise-list">
                     <!-- Exercises will be rendered here dynamically -->

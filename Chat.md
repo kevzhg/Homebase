@@ -112,3 +112,29 @@
 - Onigiri save robustness: Added pending-save queue so rapid edits aren’t dropped while a save is in flight; status still reflects saving/saved/error.
 
 - Onigiri save retry: Added clearer error text, online retry hook, and queued retry timer so failed saves keep trying after temporary API outages; still stores locally when offline.
+
+- Live workout: Live hero/banner now hides whenever an active session is running (including resume from storage) and reappears when no active session; no layout gaps added.
+
+- Live workout sets layout: Sets now share one row per exercise with equal-width columns (flex) that wrap only on very narrow screens; all statuses/actions preserved.
+
+- Live workout completed chips: Completed exercises collapse from the list and surface as chips beside the timer (click to expand the card and view sets). Completed cards are hidden by default; sets remain viewable on demand.
+
+- Live workout weights: Added quick-add weight buttons (+10/+5/+2.5), prefer last-session weight (then last-used) for prefill, and update both caches on set save. Last-session weights hydrate from training history for better memory.
+
+- Live workout rest alert: Rest timer now plays 3 quick beeps, short pause, then 3 more when rest ends (Web Audio); any in-progress beep is stopped before a new one.
+
+- Live workout weight input polish: Native number spinners hidden; quick-add buttons restyled as attached pills next to the input while keeping manual entry.
+
+- Live workout partial reps & timer fixes: Timer now tracks total vs active time without counting pauses; UI shows both. Partial reps can be selected (1..N) when choosing Partial, with counts shown on completion. Quick-add weight pills sit inline with the input, compact spacing; partial/full state and reps persist/resume.
+
+- Live workout timer UI: Removed total/active badges from the header; timer now solely shows elapsed, still respecting pause (no drift while paused) with persisted paused duration.
+
+- Live workout tweaks: Quick-add weight pills share the input row with reserved space and tighter gaps; rest timer beep made sharper (higher freq, square wave, shorter blip).
+
+- Warm-up bar restyling: Warm-up strip moved to the top of live workout, matches the purple rest-timer styling with gradient background and adjusted button colors.
+- Live workout music: Added (now removed) a small audio-focused YouTube embed between hero and timer with playlist selector.
+- Workout programs now persist to MongoDB: added `/api/programs` CRUD on the server and wired storage to use the API (with local fallback/cache); default programs seed via API when empty.
+- Program exercises normalized server-side so saved programs always store their exercise list in Mongo (IDs, sets/reps/restTime preserved).
+- Exercise library now backed by Mongo: new `/api/exercises` CRUD, storage fetch/cache with local fallback, and UI form to create exercises (name/category/type/muscles/equipment). New exercises persist to DB and show up in the builder/library for constructing workouts.
+- Exercise editing: Library now supports editing existing exercises (with defaults for sets/reps/rest) via an inline form; updates persist to Mongo and refresh the builder/library lists.
+- Builder rest tuning: Each exercise row in the builder now exposes rest time input; saved programs persist rest per exercise to Mongo and live sessions use the updated rest.

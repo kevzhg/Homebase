@@ -1,4 +1,4 @@
-import { Training, Meal, WeightEntry, WorkoutProgram, WorkoutProgramInput, ActiveWorkout, OmitId, OnigiriPlanner } from './types.js';
+import { Training, Meal, WeightEntry, WorkoutProgram, WorkoutProgramInput, ActiveWorkout, OmitId, OnigiriPlanner, ExerciseLibraryItem } from './types.js';
 /**
  * Fetches trainings, meals, and weight entries from the server and populates the local 'db' object.
  * This should be called once when the app starts.
@@ -24,6 +24,9 @@ export declare function addWorkoutProgram(programData: WorkoutProgramInput): Pro
 export declare function updateWorkoutProgram(id: string, updates: Partial<WorkoutProgram>): Promise<WorkoutProgram | null>;
 export declare function deleteWorkoutProgram(id: string): Promise<void>;
 export declare function cloneWorkoutProgram(id: string): Promise<WorkoutProgram | null>;
+export declare function getExerciseLibraryItems(): ExerciseLibraryItem[];
+export declare function addExerciseDefinition(exercise: OmitId<ExerciseLibraryItem>): Promise<ExerciseLibraryItem>;
+export declare function updateExerciseDefinition(id: string, updates: Partial<ExerciseLibraryItem>): Promise<ExerciseLibraryItem | null>;
 export declare function getOnigiriPlanner(): Promise<OnigiriPlanner>;
 export declare function saveOnigiriPlanner(planner: OnigiriPlanner): Promise<OnigiriPlanner>;
 export declare function getActiveWorkout(): ActiveWorkout | null;

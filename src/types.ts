@@ -116,6 +116,7 @@ export interface ExerciseSet {
     completedAt?: string; // ISO date string
     weight?: number;
     actualReps?: number;
+    partial?: boolean;
 }
 
 export interface ActiveExercise {
@@ -134,7 +135,10 @@ export interface ActiveWorkout {
     isResting: boolean;
     restStartTime?: string; // ISO date string
     restDuration?: number; // in milliseconds
+    restLabel?: string;
     paused: boolean;
+    pauseStartedAt?: string; // ISO date string
+    totalPausedMs?: number; // accumulated paused time
 }
 
 export interface WorkoutProgramDocument extends WorkoutProgram {
