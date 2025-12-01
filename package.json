@@ -11,7 +11,7 @@
     "start": "npx serve . -p 3000",
     "server": "node dist-server/server.js",
     "dev": "npm run build:all && (start /B npm run server && npm run start)",
-    "build:pages": "npm run build && rm -rf docs && mkdir -p docs && cp index.html styles.css docs/ && cp -r dist docs/"
+    "build:pages": "npm run build && rm -rf docs && mkdir -p docs && cp index.html styles.css docs/ && cp -r dist docs/ && touch docs/.nojekyll"
   },
     "keywords": [
         "workout",
