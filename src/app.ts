@@ -764,6 +764,9 @@ async function init(): Promise<void> {
     // Initialize server status UI first
     initServerStatusUI();
     
+    // Check server health immediately
+    checkServerHealth();
+    
     // Initialize storage (connects to API or falls back to localStorage)
     await initStorage();
 

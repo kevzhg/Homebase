@@ -1,6 +1,6 @@
 // Main Application Entry Point
 import { TRAINING_TYPE_LABELS, MEAL_TYPE_LABELS } from './types.js';
-import { initStorage, addTraining, getTrainings, getTrainingsByDate, deleteTraining, updateTraining, getTrainingById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate, onServerStatusChange, reconnectToServer } from './storage.js';
+import { initStorage, addTraining, getTrainings, getTrainingsByDate, deleteTraining, updateTraining, getTrainingById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate, onServerStatusChange, checkServerHealth, reconnectToServer } from './storage.js';
 import { initializeLiveWorkout, refreshLiveWorkout } from './liveWorkout.js';
 import { initializeOnigiriPlanner, refreshOnigiriPlanner } from './onigiri.js';
 // DOM Elements
@@ -651,6 +651,8 @@ function initServerStatusUI() {
 async function init() {
     // Initialize server status UI first
     initServerStatusUI();
+    // Check server health immediately
+    checkServerHealth();
     // Initialize storage (connects to API or falls back to localStorage)
     await initStorage();
     initNavigation();
