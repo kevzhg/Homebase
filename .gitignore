@@ -25,3 +25,6 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+
+# Local database storage (should not be committed)
+data/mongodb/
