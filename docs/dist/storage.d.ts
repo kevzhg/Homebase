@@ -1,4 +1,8 @@
 import { Training, Meal, WeightEntry, WorkoutProgram, WorkoutProgramInput, ActiveWorkout, OmitId, OnigiriPlanner, ExerciseLibraryItem } from './types.js';
+declare let serverStatus: 'online' | 'offline' | 'waking' | 'checking';
+export declare function onServerStatusChange(callback: (status: typeof serverStatus) => void): () => void;
+export declare function checkServerHealth(): Promise<boolean>;
+export declare function reconnectToServer(): Promise<void>;
 /**
  * Fetches trainings, meals, and weight entries from the server and populates the local 'db' object.
  * This should be called once when the app starts.
@@ -32,4 +36,5 @@ export declare function saveOnigiriPlanner(planner: OnigiriPlanner): Promise<Oni
 export declare function getActiveWorkout(): ActiveWorkout | null;
 export declare function saveActiveWorkout(workout: ActiveWorkout): void;
 export declare function clearActiveWorkout(): void;
+export {};
 //# sourceMappingURL=storage.d.ts.map

@@ -1,6 +1,6 @@
 // Main Application Entry Point
 import { TRAINING_TYPE_LABELS, MEAL_TYPE_LABELS } from './types.js';
-import { initStorage, addTraining, getTrainings, getTrainingsByDate, deleteTraining, updateTraining, getTrainingById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate } from './storage.js';
+import { initStorage, addTraining, getTrainings, getTrainingsByDate, deleteTraining, updateTraining, getTrainingById, addMeal, getMeals, getMealsByDate, deleteMeal, addWeightEntry, getWeightEntries, getWeightByDate, onServerStatusChange, reconnectToServer } from './storage.js';
 import { initializeLiveWorkout, refreshLiveWorkout } from './liveWorkout.js';
 import { initializeOnigiriPlanner, refreshOnigiriPlanner } from './onigiri.js';
 // DOM Elements
@@ -610,8 +610,47 @@ function showNotification(message) {
         setTimeout(() => notification.remove(), 300);
     }, 2000);
 }
+// Server status UI
+function initServerStatusUI() {
+    const indicator = $('#server-status-indicator');
+    const reconnectBtn = $('#reconnect-btn');
+    if (!indicator || !reconnectBtn)
+        return;
+    // Listen to server status changes
+    onServerStatusChange((status) => {
+        indicator.className = 'status-indicator ' + status;
+        const statusText = indicator.querySelector('.status-text');
+        if (statusText) {
+            switch (status) {
+                case 'online':
+                    statusText.textContent = 'Online';
+                    reconnectBtn.style.display = 'none';
+                    break;
+                case 'offline':
+                    statusText.textContent = 'Offline';
+                    reconnectBtn.style.display = 'block';
+                    break;
+                case 'waking':
+                    statusText.textContent = 'Waking up...';
+                    reconnectBtn.style.display = 'none';
+                    break;
+                case 'checking':
+                    statusText.textContent = 'Checking...';
+                    reconnectBtn.style.display = 'none';
+                    break;
+            }
+        }
+    });
+    // Reconnect button
+    reconnectBtn.addEventListener('click', async () => {
+        showNotification('Reconnecting to server...');
+        await reconnectToServer();
+    });
+}
 // Initialize application
 async function init() {
+    // Initialize server status UI first
+    initServerStatusUI();
     // Initialize storage (connects to API or falls back to localStorage)
     await initStorage();
     initNavigation();

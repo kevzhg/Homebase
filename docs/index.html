@@ -8,6 +8,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -39,6 +40,13 @@
             <a href="#" data-page="onigiri" class="nav-link">Onigiri</a>
           </li>
         </ul>
+        <div class="server-status">
+          <div id="server-status-indicator" class="status-indicator" title="Server Status">
+            <span class="status-dot"></span>
+            <span class="status-text">Checking...</span>
+          </div>
+          <button id="reconnect-btn" class="btn-icon" title="Reconnect to server" style="display: none;">🔄</button>
+        </div>
       </nav>
 
       <!-- Main Content -->
@@ -221,7 +229,7 @@
                           <input type="text" id="new-exercise-equipment" placeholder="Dumbbells, Bench" />
                         </div>
                         <div class="library-input library-save">
-                          <label class="label-caps">&nbsp;</label>
+                          <div class="label-caps">&nbsp;</div>
                           <button id="save-exercise-btn" class="btn btn-primary" type="button">Save Exercise</button>
                           <button id="cancel-exercise-btn" class="btn btn-ghost" type="button" style="display: none;">Cancel Edit</button>
                         </div>
