@@ -20,7 +20,7 @@ A web application for tracking daily workouts, meal plans, and weight changes wi
 ## 🌐 Deployment & CI/CD
 
 This project uses **free** continuous deployment:
-- ✅ **Frontend**: GitHub Pages (auto-deploy via GitHub Actions)
+- ✅ **Frontend**: GitHub Pages (auto-deploy via GitHub Actions) - Testing auto-deploy!
 - ✅ **Backend**: Render.com (auto-deploy on push to `master`)
 - ✅ **Database**: MongoDB Atlas (free M0 tier)
 
