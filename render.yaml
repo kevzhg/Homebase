@@ -1,0 +1,34 @@
+services:
+  # Backend API Server
+  - type: web
+    name: homebase-api
+    runtime: node
+    env: node
+    region: oregon
+    plan: free
+    branch: master
+    buildCommand: npm install && npm run build:server
+    startCommand: npm run server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: homebase
+      - key: MONGODB_COLLECTION_TRAININGS
+        value: trainings
+      - key: MONGODB_COLLECTION_MEALS
+        value: meals
+      - key: MONGODB_COLLECTION_WEIGHT
+        value: weight
+      - key: MONGODB_COLLECTION_ONIGIRI
+        value: onigiri
+      - key: MONGODB_COLLECTION_PROGRAMS
+        value: programs
+      - key: MONGODB_COLLECTION_EXERCISES
+        value: exercises
+    healthCheckPath: /api/programs
+    autoDeploy: true

@@ -2,13 +2,34 @@
 
 A web application for tracking daily workouts, meal plans, and weight changes with a calendar view.
 
+## 🚀 Live Demo
+
+- **Frontend**: [https://kevzhg.github.io/Homebase/](https://kevzhg.github.io/Homebase/)
+- **Backend API**: Deployed on Render (auto-deployed from `master` branch)
+
 ## Features
 
 - **Dashboard**: Overview of today's activities and weekly progress
+- **Live Training Builder**: Create and run workouts with exercise library, rest timers, and progress tracking
 - **Training Tracker**: Log training sessions with type, duration, exercises, and notes
 - **Meal Plan**: Track meals with calories, protein, and descriptions
 - **Weight Calendar**: Visual calendar showing daily weight entries with statistics
+- **Onigiri Planner**: Task management with weighted sections and completion tracking
 - **MongoDB backend**: Express API backed by MongoDB (local or Atlas via Render)
+
+## 🌐 Deployment & CI/CD
+
+This project uses **free** continuous deployment:
+- ✅ **Frontend**: GitHub Pages (auto-deploy via GitHub Actions)
+- ✅ **Backend**: Render.com (auto-deploy on push to `master`)
+- ✅ **Database**: MongoDB Atlas (free M0 tier)
+
+**📖 See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete setup instructions.**
+
+Quick links:
+- [MongoDB Atlas Setup](./DEPLOYMENT.md#part-1-mongodb-atlas-setup-free-database)
+- [Render Backend Setup](./DEPLOYMENT.md#part-2-backend-deployment-on-render-free)
+- [GitHub Pages Setup](./DEPLOYMENT.md#part-3-frontend-deployment-on-github-pages-free)
 
 ## Getting Started
 
