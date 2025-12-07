@@ -613,6 +613,28 @@ app.put('/api/onigiri', async (req, res) => {
     const saved = await onigiriCollection.findOne({ id: doc.id });
     res.json(onigiriToResponse(saved || doc));
 });
+// Health check endpoint for server status and keep-alive
+app.get('/api/health', async (_req, res) => {
+    try {
+        // Quick DB ping to verify connection
+        if (trainingsCollection) {
+            await trainingsCollection.findOne({});
+        }
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            database: trainingsCollection ? 'connected' : 'disconnected'
+        });
+    }
+    catch (error) {
+        res.status(503).json({
+            status: 'error',
+            timestamp: new Date().toISOString(),
+            database: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
 app.listen(PORT, () => {
     console.log(`🚀 Server is running at http://localhost:${PORT}`);
 });

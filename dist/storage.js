@@ -4,6 +4,79 @@ const EXERCISES_KEY = 'fitness-tracker-exercises';
 const ONIGIRI_PLANNER_KEY = 'onigiri-planner';
 // Allow overriding the API base URL via a global for prod (GitHub Pages) while keeping localhost as the dev default.
 const API_BASE_URL = (typeof window !== 'undefined' && window.API_BASE_URL) || 'http://localhost:8000/api';
+// Server status management
+let serverStatus = 'checking';
+let serverStatusListeners = [];
+let keepAliveInterval = null;
+const KEEP_ALIVE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const STATUS_CHECK_INTERVAL = 30 * 1000; // 30 seconds
+export function onServerStatusChange(callback) {
+    serverStatusListeners.push(callback);
+    callback(serverStatus); // Immediately call with current status
+    return () => {
+        serverStatusListeners = serverStatusListeners.filter(cb => cb !== callback);
+    };
+}
+function notifyServerStatus(status) {
+    serverStatus = status;
+    serverStatusListeners.forEach(cb => cb(status));
+}
+export async function checkServerHealth() {
+    try {
+        const startTime = Date.now();
+        const response = await fetch(`${API_BASE_URL.replace('/api', '')}/api/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
+        const responseTime = Date.now() - startTime;
+        if (response.ok) {
+            const data = await response.json();
+            // If server takes > 5 seconds, it was probably waking up
+            if (responseTime > 5000) {
+                notifyServerStatus('waking');
+                // Check again in a few seconds to confirm it's fully up
+                setTimeout(() => checkServerHealth(), 3000);
+            }
+            else {
+                notifyServerStatus('online');
+            }
+            return true;
+        }
+        else {
+            notifyServerStatus('offline');
+            return false;
+        }
+    }
+    catch (error) {
+        notifyServerStatus('offline');
+        return false;
+    }
+}
+export async function reconnectToServer() {
+    notifyServerStatus('waking');
+    await checkServerHealth();
+    if (serverStatus === 'online') {
+        // Reload data from server
+        await initStorage();
+    }
+}
+function startKeepAlive() {
+    if (keepAliveInterval !== null) {
+        return; // Already running
+    }
+    // Ping server every 5 minutes to keep Render awake
+    keepAliveInterval = window.setInterval(async () => {
+        if (serverStatus === 'online') {
+            await checkServerHealth();
+        }
+    }, KEEP_ALIVE_INTERVAL);
+    // Also check status periodically
+    window.setInterval(async () => {
+        if (serverStatus === 'offline' || serverStatus === 'checking') {
+            await checkServerHealth();
+        }
+    }, STATUS_CHECK_INTERVAL);
+}
 function generateProgramId(existingIds) {
     const used = existingIds ?? new Set();
     let id = '';
@@ -25,6 +98,7 @@ let exerciseCache = [];
  */
 export async function initStorage() {
     try {
+        notifyServerStatus('checking');
         const [trainings, meals, weight, programs, exercises] = await Promise.all([
             apiGet('trainings'),
             apiGet('meals'),
@@ -37,10 +111,13 @@ export async function initStorage() {
         db.weight = weight.map(normalizeWeight);
         hydrateProgramCache(programs);
         hydrateExerciseCache(exercises);
+        notifyServerStatus('online');
+        startKeepAlive(); // Start keep-alive pinging
         console.log('Database initialized from server', db);
     }
     catch (error) {
         console.error("Error initializing storage:", error);
+        notifyServerStatus('offline');
         // Initialize with empty structure if server fails
         db = { trainings: [], meals: [], weight: [] };
         // Fallback to local programs if API unavailable
