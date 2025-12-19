@@ -9,11 +9,14 @@ import SwiftUI
 
 struct WorkoutBuilderView: View {
     @ObservedObject var viewModel: LiveWorkoutViewModel
+    @ObservedObject var firebaseService = FirebaseService.shared
     @State private var newExerciseName = ""
     @State private var newExerciseSets = "4"
     @State private var newExerciseReps = "8"
     @State private var newExerciseRest = "90"
     @State private var isAddExerciseExpanded = false
+    @State private var showExerciseLibrary = false
+    @State private var saveToLibrary = true
     
     var body: some View {
         ScrollView {
@@ -124,6 +127,34 @@ struct WorkoutBuilderView: View {
                     Divider()
                         .padding(.horizontal)
                     
+                    // Exercise Library Browse Button
+                    Button(action: { showExerciseLibrary = true }) {
+                        HStack {
+                            Image(systemName: "books.vertical")
+                                .font(.title3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Browse Exercise Library")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("\(firebaseService.exerciseLibrary.count) exercises available")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Divider()
+                        .padding(.horizontal)
+                    
                     // Collapsible Add Exercise section
                     VStack(alignment: .leading, spacing: 12) {
                         Button(action: {
@@ -132,7 +163,7 @@ struct WorkoutBuilderView: View {
                             }
                         }) {
                             HStack {
-                                Text("ADD EXERCISE")
+                                Text("CREATE NEW EXERCISE")
                                     .font(.caption)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.secondary)
@@ -150,6 +181,11 @@ struct WorkoutBuilderView: View {
                             VStack(spacing: 12) {
                                 TextField("Exercise name", text: $newExerciseName)
                                     .textFieldStyle(.roundedBorder)
+                                
+                                // Save to library toggle
+                                Toggle("Save to Exercise Library", isOn: $saveToLibrary)
+                                    .font(.caption)
+                                    .toggleStyle(SwitchToggleStyle(tint: .blue))
                                 
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading) {
@@ -220,6 +256,11 @@ struct WorkoutBuilderView: View {
                 .padding(.top)
             }
             .scrollDismissesKeyboard(.interactively)
+            .sheet(isPresented: $showExerciseLibrary) {
+                ExerciseLibraryView(isPresented: $showExerciseLibrary) { libraryExercise in
+                    addExerciseFromLibrary(libraryExercise)
+                }
+            }
     }
     
     private var totalSets: Int {
@@ -227,15 +268,68 @@ struct WorkoutBuilderView: View {
     }
     
     private func addExercise() {
+        // Capture values before resetting form
+        let exerciseName = newExerciseName
+        let exerciseSets = Int(newExerciseSets) ?? 4
+        let exerciseReps = newExerciseReps
+        let exerciseRest = Int(newExerciseRest) ?? 90
+        let category = viewModel.builderCategory
+        
+        logInfo("🏋️ Adding exercise - Name: '\(exerciseName)', Sets: \(exerciseSets), Reps: '\(exerciseReps)', Rest: \(exerciseRest)", category: "liveWorkout")
+        
         let exercise = Exercise(
             id: UUID().uuidString,
-            name: newExerciseName,
-            sets: Int(newExerciseSets) ?? 4,
-            reps: newExerciseReps,
-            restTime: Int(newExerciseRest) ?? 90
+            name: exerciseName,
+            sets: exerciseSets,
+            reps: exerciseReps,
+            restTime: exerciseRest
         )
         viewModel.builderExercises.append(exercise)
+        
+        // Save to exercise library if toggle is on
+        if saveToLibrary {
+            logInfo("💾 Saving to library - Name: '\(exerciseName)', Category: \(category.rawValue)", category: "liveWorkout")
+            Task {
+                let libraryItem = ExerciseLibraryItem(
+                    id: nil,
+                    name: exerciseName,
+                    sets: exerciseSets,
+                    reps: exerciseReps,
+                    restTime: exerciseRest,
+                    notes: nil,
+                    exerciseType: nil,
+                    category: category,
+                    muscles: nil,
+                    equipment: nil
+                )
+                
+                logInfo("📦 Library item created - Name: '\(libraryItem.name)', Category: \(libraryItem.category.rawValue)", category: "liveWorkout")
+                
+                do {
+                    try await firebaseService.addExerciseToLibrary(libraryItem)
+                    logSuccess("✅ Exercise '\(exerciseName)' saved to library", category: "liveWorkout")
+                } catch {
+                    logError("❌ Failed to save exercise to library", error: error, category: "liveWorkout")
+                }
+            }
+        } else {
+            logInfo("⏭️ Skipping save to library (toggle is off)", category: "liveWorkout")
+        }
+        
         resetForm()
+    }
+    
+    private func addExerciseFromLibrary(_ libraryExercise: ExerciseLibraryItem) {
+        let exercise = Exercise(
+            id: UUID().uuidString,
+            name: libraryExercise.name,
+            sets: libraryExercise.sets,
+            reps: libraryExercise.reps,
+            restTime: libraryExercise.restTime,
+            notes: libraryExercise.notes,
+            exerciseType: libraryExercise.exerciseType
+        )
+        viewModel.builderExercises.append(exercise)
     }
     
     private func resetForm() {

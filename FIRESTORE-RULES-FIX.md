@@ -34,10 +34,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Shared exercise library (read-only for all)
+    // Shared exercise library - allow all for development
     match /exercises/{exerciseId} {
-      allow read: if true;
-      allow write: if request.auth != null; // Only authenticated users can write
+      allow read, write: if true; // Allow all during development
+      // For production: allow write: if request.auth != null;
     }
   }
 }

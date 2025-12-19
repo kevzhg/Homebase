@@ -130,7 +130,7 @@ struct Exercise: Codable, Identifiable {
 }
 
 struct ExerciseLibraryItem: Codable, Identifiable {
-    var id: String
+    var id: String?
     var name: String
     var sets: Int
     var reps: String
@@ -142,7 +142,7 @@ struct ExerciseLibraryItem: Codable, Identifiable {
     var equipment: String?
     
     enum CodingKeys: String, CodingKey {
-        case id, name, sets, reps, restTime, notes, exerciseType, category, muscles, equipment
+        case name, sets, reps, restTime, notes, exerciseType, category, muscles, equipment
     }
 }
 

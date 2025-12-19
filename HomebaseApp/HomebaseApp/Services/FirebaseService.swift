@@ -44,6 +44,7 @@ class FirebaseService: ObservableObject {
     private var mealsListener: ListenerRegistration?
     private var weightListener: ListenerRegistration?
     private var programsListener: ListenerRegistration?
+    private var exercisesListener: ListenerRegistration?
     
     private init() {
         logInfo("🔥 Initializing FirebaseService", category: "firebase")
@@ -64,6 +65,7 @@ class FirebaseService: ObservableObject {
         startMealsListener()
         startWeightListener()
         startProgramsListener()
+        startExerciseLibraryListener()
     }
     
     func stopListening() {
@@ -71,6 +73,7 @@ class FirebaseService: ObservableObject {
         mealsListener?.remove()
         weightListener?.remove()
         programsListener?.remove()
+        exercisesListener?.remove()
     }
     
     // MARK: - Training Operations
@@ -323,21 +326,55 @@ class FirebaseService: ObservableObject {
     
     // MARK: - Exercise Library Operations (Shared across all users)
     
-    func loadExerciseLibrary() async throws {
-        let snapshot = try await db.collection("exercises")
+    private func startExerciseLibraryListener() {
+        exercisesListener = db.collection("exercises")
             .order(by: "name")
-            .getDocuments()
-        
-        exerciseLibrary = snapshot.documents.compactMap { doc in
-            var exercise = try? doc.data(as: ExerciseLibraryItem.self)
-            exercise?.id = doc.documentID
-            return exercise
-        }
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    self.errorMessage = "Error loading exercise library: \(error.localizedDescription)"
+                    logError("Failed to load exercise library", error: error, category: "firebase")
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else {
+                    logInfo("No exercises found in library", category: "firebase")
+                    return
+                }
+                
+                self.exerciseLibrary = documents.compactMap { doc in
+                    var exercise = try? doc.data(as: ExerciseLibraryItem.self)
+                    exercise?.id = doc.documentID
+                    return exercise
+                }
+                
+                logSuccess("Loaded \(self.exerciseLibrary.count) exercises from library", category: "firebase")
+            }
     }
     
     func addExerciseToLibrary(_ exercise: ExerciseLibraryItem) async throws {
-        let _ = try db.collection("exercises")
+        let _ = try await db.collection("exercises")
             .addDocument(from: exercise)
+        logSuccess("Added exercise '\(exercise.name)' to library", category: "firebase")
+    }
+    
+    func deleteExerciseFromLibrary(_ id: String) async throws {
+        try await db.collection("exercises")
+            .document(id)
+            .delete()
+        logSuccess("Deleted exercise from library", category: "firebase")
+    }
+    
+    func updateExerciseInLibrary(_ exercise: ExerciseLibraryItem) async throws {
+        guard let id = exercise.id else {
+            throw NSError(domain: "FirebaseService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Exercise ID is nil"])
+        }
+        
+        try await db.collection("exercises")
+            .document(id)
+            .setData(from: exercise, merge: true)
+        logSuccess("Updated exercise '\(exercise.name)' in library", category: "firebase")
     }
     
     // MARK: - Helper Methods
