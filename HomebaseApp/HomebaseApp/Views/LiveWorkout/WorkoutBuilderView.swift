@@ -220,10 +220,6 @@ struct WorkoutBuilderView: View {
                 .padding(.top)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onTapGesture {
-                // Dismiss keyboard when tapping outside
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
     }
     
     private var totalSets: Int {
