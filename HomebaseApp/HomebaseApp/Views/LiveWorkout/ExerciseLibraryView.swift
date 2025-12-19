@@ -16,6 +16,7 @@ struct ExerciseLibraryView: View {
     @State private var selectedCategory: ProgramType?
     @State private var exerciseToDelete: ExerciseLibraryItem?
     @State private var showDeleteConfirmation = false
+    @State private var exerciseToEdit: ExerciseLibraryItem?
     
     var filteredExercises: [ExerciseLibraryItem] {
         let exercises = firebaseService.exerciseLibrary
@@ -105,6 +106,9 @@ struct ExerciseLibraryView: View {
                                         onSelectExercise(exercise)
                                         isPresented = false
                                     },
+                                    onEdit: {
+                                        exerciseToEdit = exercise
+                                    },
                                     onDelete: {
                                         exerciseToDelete = exercise
                                         showDeleteConfirmation = true
@@ -136,6 +140,9 @@ struct ExerciseLibraryView: View {
                 if let exercise = exerciseToDelete {
                     Text("Are you sure you want to delete '\(exercise.name)' from the library?")
                 }
+            }
+            .sheet(item: $exerciseToEdit) { exercise in
+                ExerciseEditView(exercise: exercise, exerciseToEdit: $exerciseToEdit)
             }
         }
     }
@@ -179,37 +186,28 @@ struct CategoryFilterButton: View {
 struct ExerciseLibraryCard: View {
     let exercise: ExerciseLibraryItem
     let onSelect: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Main content - tappable to select
-            Button(action: onSelect) {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Main content
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(exercise.name)
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            HStack(spacing: 8) {
-                                Label(exercise.category.displayName, systemImage: "tag")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                if let type = exercise.exerciseType {
-                                    Label(type.displayName, systemImage: "star")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                    HStack(spacing: 8) {
+                        Text(exercise.name)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Label(exercise.category.displayName, systemImage: "tag")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if let type = exercise.exerciseType {
+                            Label(type.displayName, systemImage: "star")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
                     }
                     
                     // Exercise details
@@ -249,20 +247,29 @@ struct ExerciseLibraryCard: View {
                             .lineLimit(2)
                     }
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Spacer()
+                
+                // Action buttons inline
+                HStack(spacing: 16) {
+                    Button(action: onEdit) {
+                        Image(systemName: "pencil")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.title3)
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
-            
-            // Delete button
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .font(.title3)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 16)
-            }
-            .buttonStyle(.plain)
+            .padding()
         }
+        .buttonStyle(.plain)
         .background(Color(.systemGray6))
         .cornerRadius(12)
     }

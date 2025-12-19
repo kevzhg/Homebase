@@ -13,10 +13,13 @@ struct WorkoutBuilderView: View {
     @State private var newExerciseName = ""
     @State private var newExerciseSets = "4"
     @State private var newExerciseReps = "8"
-    @State private var newExerciseRest = "90"
+    @State private var newExerciseRest = "60"
     @State private var isAddExerciseExpanded = false
     @State private var showExerciseLibrary = false
     @State private var saveToLibrary = true
+    @State private var selectedPrimaryType: ProgramType = .push
+    @State private var selectedSecondaryType: ExerciseType? = nil
+    @State private var selectedMuscles: Set<String> = []
     
     var body: some View {
         ScrollView {
@@ -69,16 +72,17 @@ struct WorkoutBuilderView: View {
                     }
                     .padding(.horizontal)
                     
-                    // Category picker
+                    // Category picker - Only Push/Pull/Legs/Hybrid for workout programs
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("CATEGORY")
+                        Text("WORKOUT TYPE")
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
                         Picker("Category", selection: $viewModel.builderCategory) {
-                            ForEach(ProgramType.allCases, id: \.self) { type in
-                                Text(type.displayName).tag(type)
-                            }
+                            Text(ProgramType.push.displayName).tag(ProgramType.push)
+                            Text(ProgramType.pull.displayName).tag(ProgramType.pull)
+                            Text(ProgramType.legs.displayName).tag(ProgramType.legs)
+                            Text(ProgramType.hybrid.displayName).tag(ProgramType.hybrid)
                         }
                         .pickerStyle(.segmented)
                     }
@@ -110,6 +114,9 @@ struct WorkoutBuilderView: View {
                                     index: index,
                                     onDelete: {
                                         viewModel.builderExercises.remove(at: index)
+                                    },
+                                    onEdit: { updatedExercise in
+                                        viewModel.builderExercises[index] = updatedExercise
                                     },
                                     onMoveUp: index > 0 ? {
                                         let item = viewModel.builderExercises.remove(at: index)
@@ -178,49 +185,184 @@ struct WorkoutBuilderView: View {
                         .buttonStyle(.plain)
                         
                         if isAddExerciseExpanded {
-                            VStack(spacing: 12) {
+                            VStack(spacing: 10) {
+                                // Exercise name
                                 TextField("Exercise name", text: $newExerciseName)
                                     .textFieldStyle(.roundedBorder)
                                 
-                                // Save to library toggle
-                                Toggle("Save to Exercise Library", isOn: $saveToLibrary)
-                                    .font(.caption)
-                                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                                // Row 1: Primary, Secondary, Muscles
+                                HStack(spacing: 8) {
+                                    // Primary Type
+                                    Menu {
+                                        ForEach(ProgramType.allCases, id: \.self) { type in
+                                            Button(action: { selectedPrimaryType = type }) {
+                                                HStack {
+                                                    Text(type.displayName)
+                                                    if selectedPrimaryType == type {
+                                                        Image(systemName: "checkmark")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Primary")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            HStack {
+                                                Text(selectedPrimaryType.displayName)
+                                                    .font(.caption)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                                Image(systemName: "chevron.down")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    
+                                    // Secondary Type
+                                    Menu {
+                                        Button(action: { 
+                                            selectedSecondaryType = nil
+                                            newExerciseSets = "4"
+                                            newExerciseReps = "8"
+                                        }) {
+                                            HStack {
+                                                Text("None")
+                                                if selectedSecondaryType == nil {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                        ForEach(ExerciseType.allCases, id: \.self) { type in
+                                            Button(action: { 
+                                                selectedSecondaryType = type
+                                                newExerciseSets = "\(type.defaultSets)"
+                                                newExerciseReps = type.defaultReps
+                                            }) {
+                                                HStack {
+                                                    Text(type.displayName)
+                                                    if selectedSecondaryType == type {
+                                                        Image(systemName: "checkmark")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Secondary")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            HStack {
+                                                Text(selectedSecondaryType?.displayName ?? "None")
+                                                    .font(.caption)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                                Image(systemName: "chevron.down")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    
+                                    // Muscle Groups
+                                    Menu {
+                                        ForEach(["Chest", "Shoulders", "Back", "Quads", "Hamstrings", "Calves", "Triceps", "Biceps", "Forearms", "Abs"], id: \.self) { muscle in
+                                            Button(action: {
+                                                if selectedMuscles.contains(muscle) {
+                                                    selectedMuscles.remove(muscle)
+                                                } else {
+                                                    selectedMuscles.insert(muscle)
+                                                }
+                                            }) {
+                                                HStack {
+                                                    Text(muscle)
+                                                    if selectedMuscles.contains(muscle) {
+                                                        Image(systemName: "checkmark")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Muscles")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            HStack {
+                                                Text(selectedMuscles.isEmpty ? "None" : "\(selectedMuscles.count) selected")
+                                                    .font(.caption)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                                Image(systemName: "chevron.down")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
                                 
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading) {
+                                // Row 2: Sets, Reps, Rest
+                                HStack(spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("Sets")
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
                                         TextField("4", text: $newExerciseSets)
                                             .keyboardType(.numberPad)
                                             .textFieldStyle(.roundedBorder)
+                                            .frame(height: 32)
                                     }
                                     
-                                    VStack(alignment: .leading) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("Reps")
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
                                         TextField("8", text: $newExerciseReps)
                                             .textFieldStyle(.roundedBorder)
+                                            .frame(height: 32)
                                     }
                                     
-                                    VStack(alignment: .leading) {
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("Rest (s)")
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
-                                        TextField("90", text: $newExerciseRest)
+                                        TextField("60", text: $newExerciseRest)
                                             .keyboardType(.numberPad)
                                             .textFieldStyle(.roundedBorder)
+                                            .frame(height: 32)
                                     }
                                 }
                                 
-                                Button(action: addExercise) {
-                                    Label("Add Exercise", systemImage: "plus.circle.fill")
-                                        .frame(maxWidth: .infinity)
+                                // Save toggle and Add button
+                                HStack(spacing: 8) {
+                                    Toggle("Save to Library", isOn: $saveToLibrary)
+                                        .font(.caption)
+                                        .toggleStyle(SwitchToggleStyle(tint: .blue))
+                                    
+                                    Button(action: addExercise) {
+                                        Label("Add", systemImage: "plus.circle.fill")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(newExerciseName.isEmpty)
                                 }
-                                .buttonStyle(.bordered)
-                                .disabled(newExerciseName.isEmpty)
                             }
                             .padding()
                             .background(Color(.systemGray6))
@@ -273,22 +415,26 @@ struct WorkoutBuilderView: View {
         let exerciseSets = Int(newExerciseSets) ?? 4
         let exerciseReps = newExerciseReps
         let exerciseRest = Int(newExerciseRest) ?? 90
-        let category = viewModel.builderCategory
+        let primaryType = selectedPrimaryType
+        let secondaryType = selectedSecondaryType
+        let muscles = Array(selectedMuscles)
         
-        logInfo("🏋️ Adding exercise - Name: '\(exerciseName)', Sets: \(exerciseSets), Reps: '\(exerciseReps)', Rest: \(exerciseRest)", category: "liveWorkout")
+        logInfo("🏋️ Adding exercise - Name: '\(exerciseName)', Primary: \(primaryType.rawValue), Muscles: \(muscles.joined(separator: ", "))", category: "liveWorkout")
         
         let exercise = Exercise(
             id: UUID().uuidString,
             name: exerciseName,
             sets: exerciseSets,
             reps: exerciseReps,
-            restTime: exerciseRest
+            restTime: exerciseRest,
+            notes: nil,
+            exerciseType: secondaryType
         )
         viewModel.builderExercises.append(exercise)
         
         // Save to exercise library if toggle is on
         if saveToLibrary {
-            logInfo("💾 Saving to library - Name: '\(exerciseName)', Category: \(category.rawValue)", category: "liveWorkout")
+            logInfo("💾 Saving to library - Name: '\(exerciseName)', Primary: \(primaryType.rawValue)", category: "liveWorkout")
             Task {
                 let libraryItem = ExerciseLibraryItem(
                     id: nil,
@@ -297,13 +443,13 @@ struct WorkoutBuilderView: View {
                     reps: exerciseReps,
                     restTime: exerciseRest,
                     notes: nil,
-                    exerciseType: nil,
-                    category: category,
-                    muscles: nil,
+                    exerciseType: secondaryType,
+                    category: primaryType,
+                    muscles: muscles.isEmpty ? nil : muscles,
                     equipment: nil
                 )
                 
-                logInfo("📦 Library item created - Name: '\(libraryItem.name)', Category: \(libraryItem.category.rawValue)", category: "liveWorkout")
+                logInfo("📦 Library item created - Name: '\(libraryItem.name)', Primary: \(libraryItem.category.rawValue)", category: "liveWorkout")
                 
                 do {
                     try await firebaseService.addExerciseToLibrary(libraryItem)
@@ -336,7 +482,10 @@ struct WorkoutBuilderView: View {
         newExerciseName = ""
         newExerciseSets = "4"
         newExerciseReps = "8"
-        newExerciseRest = "90"
+        newExerciseRest = "60"
+        selectedPrimaryType = .push
+        selectedSecondaryType = nil
+        selectedMuscles.removeAll()
     }
 }
 
@@ -346,8 +495,11 @@ struct ExerciseBuilderRow: View {
     let exercise: Exercise
     let index: Int
     let onDelete: () -> Void
+    let onEdit: (Exercise) -> Void
     let onMoveUp: (() -> Void)?
     let onMoveDown: (() -> Void)?
+    
+    @State private var showEditSheet = false
     
     var body: some View {
         HStack(spacing: 12) {
@@ -386,6 +538,13 @@ struct ExerciseBuilderRow: View {
             
             Spacer()
             
+            // Edit button
+            Button(action: { showEditSheet = true }) {
+                Image(systemName: "pencil")
+                    .foregroundColor(.blue)
+            }
+            .buttonStyle(.borderless)
+            
             // Delete button
             Button(action: onDelete) {
                 Image(systemName: "trash")
@@ -397,6 +556,9 @@ struct ExerciseBuilderRow: View {
         .background(Color(.systemGray6))
         .cornerRadius(8)
         .padding(.horizontal)
+        .sheet(isPresented: $showEditSheet) {
+            ExerciseInstanceEditView(exercise: exercise, onSave: onEdit)
+        }
     }
 }
 

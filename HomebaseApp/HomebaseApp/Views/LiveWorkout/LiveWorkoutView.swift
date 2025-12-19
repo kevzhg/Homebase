@@ -19,11 +19,9 @@ struct LiveWorkoutView: View {
                 } else {
                     // Program selection or builder
                     VStack(spacing: 0) {
-                        // Header
-                        LiveWorkoutHeader()
-                        
                         // Tabs
                         TabSelector(selectedTab: $viewModel.selectedTab)
+                            .padding(.top, 12)
                         
                         // Content - using conditional view instead of paged TabView
                         // to avoid gesture conflicts with ScrollView
@@ -45,29 +43,9 @@ struct LiveWorkoutView: View {
             }
             .navigationTitle("Live Workout")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(red: 0.85, green: 0.80, blue: 0.95), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
-    }
-}
-
-// MARK: - Header
-
-struct LiveWorkoutHeader: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("LIVE TRAINING")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-            Text("Build & Run Sessions")
-                .font(.title2)
-                .fontWeight(.bold)
-            Text("Push, Pull, Legs templates. Save, clone, and start live workouts.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color(.systemGray6))
     }
 }
 
@@ -87,7 +65,8 @@ struct TabSelector: View {
             }
         }
         .background(Color(.systemGray6))
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 }
 
@@ -99,13 +78,13 @@ struct TabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline)
+                .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(isSelected ? .white : .primary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, 6)
                 .background(isSelected ? Color.blue : Color.clear)
-                .cornerRadius(8)
+                .cornerRadius(6)
         }
     }
 }

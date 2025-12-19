@@ -144,6 +144,29 @@ struct ProgramCard: View {
     let program: WorkoutProgram
     @ObservedObject var viewModel: LiveWorkoutViewModel
     @State private var showDeleteConfirmation = false
+    @State private var showAllExercises = false
+    
+    // Calculate total workout duration
+    private var totalDuration: Int {
+        let warmUpMinutes = 5
+        var totalSeconds = warmUpMinutes * 60
+        
+        for exercise in program.exercises {
+            // Parse reps (handle formats like "8", "8-10", "8,10,12")
+            let repsString = exercise.reps.components(separatedBy: CharacterSet(charactersIn: ",-")).first ?? "0"
+            let repsPerSet = Int(repsString.trimmingCharacters(in: .whitespaces)) ?? 0
+            
+            // Time for reps: 3 seconds per rep, times number of sets
+            let repTime = repsPerSet * 3 * exercise.sets
+            
+            // Rest time: between sets (sets - 1) times rest duration
+            let restTime = (exercise.sets - 1) * exercise.restTime
+            
+            totalSeconds += repTime + restTime
+        }
+        
+        return totalSeconds / 60 // Convert to minutes
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -152,16 +175,24 @@ struct ProgramCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(program.displayName)
                         .font(.headline)
-                    Text("\(program.name.displayName) • \(program.exercises.count) exercises")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Text("\(program.name.displayName) • \(program.exercises.count) exercises")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("•")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("~\(totalDuration) min")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
                 }
                 Spacer()
             }
             
-            // Exercise preview (first 2)
+            // Exercise preview
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(program.exercises.prefix(2))) { exercise in
+                ForEach(Array(program.exercises.prefix(showAllExercises ? program.exercises.count : 2))) { exercise in
                     HStack {
                         Text("•")
                         Text(exercise.name)
@@ -173,9 +204,16 @@ struct ProgramCard: View {
                     }
                 }
                 if program.exercises.count > 2 {
-                    Text("+ \(program.exercises.count - 2) more")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Button(action: {
+                        withAnimation {
+                            showAllExercises.toggle()
+                        }
+                    }) {
+                        Text(showAllExercises ? "Show less" : "+ \(program.exercises.count - 2) more")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.leading, 8)

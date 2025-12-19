@@ -36,6 +36,9 @@ enum ProgramType: String, Codable, CaseIterable {
     case push
     case pull
     case legs
+    case core
+    case stretching
+    case hybrid
     
     var displayName: String {
         rawValue.capitalized
@@ -43,14 +46,37 @@ enum ProgramType: String, Codable, CaseIterable {
 }
 
 enum ExerciseType: String, Codable, CaseIterable {
-    case power
     case hypertrophy
+    case power
+    case athletic
     case compound
     case flexibility
     case cardio
     
     var displayName: String {
         rawValue.capitalized
+    }
+    
+    var defaultSets: Int {
+        switch self {
+        case .hypertrophy: return 4
+        case .power: return 4
+        case .athletic: return 3
+        case .compound: return 4
+        case .flexibility: return 3
+        case .cardio: return 3
+        }
+    }
+    
+    var defaultReps: String {
+        switch self {
+        case .hypertrophy: return "12"
+        case .power: return "8"
+        case .athletic: return "10"
+        case .compound: return "10"
+        case .flexibility: return "12"
+        case .cardio: return "15"
+        }
     }
 }
 
@@ -129,7 +155,7 @@ struct Exercise: Codable, Identifiable {
     }
 }
 
-struct ExerciseLibraryItem: Codable, Identifiable {
+struct ExerciseLibraryItem: Codable, Identifiable, Hashable {
     var id: String?
     var name: String
     var sets: Int
