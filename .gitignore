@@ -25,6 +25,36 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+.env.example
 
 # Local database storage (should not be committed)
 data/mongodb/
+
+# iOS / Xcode
+HomebaseApp/build/
+HomebaseApp/DerivedData/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+*.moved-aside
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Firebase
+GoogleService-Info.plist
+
+# Swift Package Manager
+.swiftpm/
+.build/
+*.swiftpm
+
+# CocoaPods (if used)
+Pods/
+*.podspec
+Podfile.lock
