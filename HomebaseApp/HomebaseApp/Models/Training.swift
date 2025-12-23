@@ -137,6 +137,15 @@ struct Training: Codable, Identifiable {
         formatter.dateStyle = .medium
         return formatter.string(from: dateObj)
     }
+    
+    // Helper to format date and time for display
+    var formattedDateTime: String {
+        guard let createdAt = createdAt else { return formattedDate }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: createdAt)
+    }
 }
 
 // MARK: - Workout Program Models (for Live Workout)

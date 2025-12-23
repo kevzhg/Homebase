@@ -237,7 +237,7 @@ struct DashboardView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
             } else {
-                ForEach(Array(firebaseService.trainings.prefix(5))) { training in
+                ForEach(Array(firebaseService.trainings.sorted(by: { ($0.createdAt ?? Date.distantPast) > ($1.createdAt ?? Date.distantPast) }).prefix(5))) { training in
                     RecentTrainingRow(
                         training: training,
                         isExpanded: expandedTrainingId == training.id,
@@ -326,7 +326,7 @@ struct RecentTrainingRow: View {
             Button(action: onToggle) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(training.formattedDate)
+                        Text(training.formattedDateTime)
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
