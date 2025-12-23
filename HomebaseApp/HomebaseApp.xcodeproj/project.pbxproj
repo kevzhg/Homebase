@@ -15,9 +15,22 @@
 		296B1ABA2EF4F3DE00F38576 /* HomebaseApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomebaseApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		294AF00E2EF5BD1700E07BC2 /* Exceptions for "HomebaseApp" folder in "HomebaseApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 296B1AB92EF4F3DE00F38576 /* HomebaseApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		296B1ABC2EF4F3DE00F38576 /* HomebaseApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				294AF00E2EF5BD1700E07BC2 /* Exceptions for "HomebaseApp" folder in "HomebaseApp" target */,
+			);
 			path = HomebaseApp;
 			sourceTree = "<group>";
 		};
@@ -261,10 +274,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HomebaseApp/HomebaseApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomebaseApp/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We use HealthKit to track your workout sessions in the Fitness app";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We write workout data to the Fitness app to track your training progress";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -292,10 +309,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HomebaseApp/HomebaseApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomebaseApp/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We use HealthKit to track your workout sessions in the Fitness app";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We write workout data to the Fitness app to track your training progress";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
 @MainActor
 class LiveWorkoutViewModel: ObservableObject {
@@ -32,10 +33,13 @@ class LiveWorkoutViewModel: ObservableObject {
     // UI state
     @Published var selectedTab: WorkoutTab = .start
     @Published var expandedCategories: Set<ProgramType> = []
+    @Published var showWorkoutSummary: Bool = false
+    @Published var completedWorkout: ActiveWorkout?
     
     // MARK: - Private Properties
     
     private let firebaseService = FirebaseService.shared
+    private let healthKitService = HealthKitService.shared
     private var workoutTimer: Timer?
     private var restTimer: Timer?
     private var workoutStartTime: Date?
@@ -58,6 +62,11 @@ class LiveWorkoutViewModel: ObservableObject {
                 self?.workoutPrograms = programs
             }
             .store(in: &cancellables)
+        
+        // Request HealthKit authorization
+        Task {
+            try? await healthKitService.requestAuthorization()
+        }
     }
     
     // MARK: - Program Management
@@ -174,6 +183,12 @@ class LiveWorkoutViewModel: ObservableObject {
         workoutStartTime = Date()
         saveActiveWorkoutState()
         
+        // Start HealthKit workout session
+        Task {
+            try? await healthKitService.startWorkoutSession(workoutType: program.name)
+            logSuccess("Started Fitness app workout tracking", category: "live-workout")
+        }
+        
         startWorkoutTimer()
         startRest(seconds: initialRestSeconds, label: "Warm Up")
     }
@@ -200,14 +215,20 @@ class LiveWorkoutViewModel: ObservableObject {
             workout.paused = false
             workout.pauseStartedAt = nil
             startWorkoutTimer()
-            logInfo("Resumed workout", category: "live-workout")
+            
+            // Resume HealthKit session
+            healthKitService.resumeWorkoutSession()
+            logInfo("Resumed workout and Fitness tracking", category: "live-workout")
         } else {
             // Pause
             workout.paused = true
             workout.pauseStartedAt = Date()
             stopWorkoutTimer()
             stopRest()
-            logInfo("Paused workout", category: "live-workout")
+            
+            // Pause HealthKit session
+            healthKitService.pauseWorkoutSession()
+            logInfo("Paused workout and Fitness tracking", category: "live-workout")
         }
         
         activeWorkout = workout
@@ -287,10 +308,27 @@ class LiveWorkoutViewModel: ObservableObject {
         do {
             try await firebaseService.addTraining(training)
             logSuccess("Saved workout to trainings", category: "live-workout")
-            stopWorkout()
+            
+            // End HealthKit workout session
+            do {
+                try await healthKitService.endWorkoutSession()
+                logSuccess("Ended Fitness app workout tracking", category: "live-workout")
+            } catch {
+                logError("Failed to end Fitness tracking", error: error, category: "live-workout")
+            }
+            
+            // Show summary before stopping workout
+            completedWorkout = workout
+            showWorkoutSummary = true
         } catch {
             logError("Failed to save workout", error: error, category: "live-workout")
         }
+    }
+    
+    func dismissWorkoutSummary() {
+        showWorkoutSummary = false
+        completedWorkout = nil
+        stopWorkout()
     }
     
     // MARK: - Timer Management
@@ -309,17 +347,30 @@ class LiveWorkoutViewModel: ObservableObject {
     }
     
     private func updateWorkoutDuration() {
-        guard let startTime = workoutStartTime else { return }
+        guard let startTime = workoutStartTime,
+              let workout = activeWorkout else { return }
+        
+        // Don't update if paused
+        if workout.paused { return }
+        
         let elapsed = Date().timeIntervalSince(startTime)
-        let minutes = Int(elapsed) / 60
-        let seconds = Int(elapsed) % 60
+        let pausedSeconds = Double(workout.totalPausedMs ?? 0) / 1000.0
+        let activeElapsed = elapsed - pausedSeconds
+        
+        let minutes = Int(activeElapsed) / 60
+        let seconds = Int(activeElapsed) % 60
         workoutDuration = String(format: "%02d:%02d", minutes, seconds)
     }
     
     private func workoutDurationMinutes() -> Int {
-        guard let startTime = workoutStartTime else { return 0 }
+        guard let startTime = workoutStartTime,
+              let workout = activeWorkout else { return 0 }
+        
         let elapsed = Date().timeIntervalSince(startTime)
-        return Int(elapsed) / 60
+        let pausedSeconds = Double(workout.totalPausedMs ?? 0) / 1000.0
+        let activeElapsed = elapsed - pausedSeconds
+        
+        return Int(activeElapsed) / 60
     }
     
     func startRest(seconds: Int, label: String) {
@@ -332,12 +383,39 @@ class LiveWorkoutViewModel: ObservableObject {
             guard let self = self else { return }
             if self.restTimeRemaining > 0 {
                 self.restTimeRemaining -= 1
+                // Play warning beeps at 5 seconds
+                if self.restTimeRemaining == 5 {
+                    self.playRestWarningBeeps()
+                }
             } else {
+                self.playRestCompleteBeeps()
                 self.stopRest()
             }
         }
         
         logInfo("Rest started: \(seconds)s - \(label)", category: "live-workout")
+    }
+    
+    private func playRestWarningBeeps() {
+        // Play beep beep at 5 seconds remaining
+        let beepPattern: [TimeInterval] = [0, 0.15]
+        
+        for delay in beepPattern {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                AudioServicesPlaySystemSound(1057) // System beep sound
+            }
+        }
+    }
+    
+    private func playRestCompleteBeeps() {
+        // Play beep beep beep - pause - beep beep beep pattern
+        let beepPattern: [TimeInterval] = [0, 0.15, 0.3, 0.7, 0.85, 1.0]
+        
+        for (index, delay) in beepPattern.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                AudioServicesPlaySystemSound(1057) // System beep sound
+            }
+        }
     }
     
     func stopRest() {
