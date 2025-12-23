@@ -143,7 +143,7 @@ struct ConfettiView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                ForEach(0..<100, id: \.self) { index in
+                ForEach(0..<50, id: \.self) { index in
                     ConfettiPieceView(
                         index: index,
                         screenWidth: geometry.size.width,

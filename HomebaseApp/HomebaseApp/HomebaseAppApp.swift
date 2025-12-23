@@ -22,6 +22,7 @@ struct HomebaseAppApp: App {
                         Label("Live Workout", systemImage: "figure.run")
                     }
             }
+            .preferredColorScheme(.light)
             .onAppear {
                 FirebaseService.shared.startListening()
             }

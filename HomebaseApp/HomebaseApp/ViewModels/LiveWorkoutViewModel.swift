@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import Combine
 import AVFoundation
+import AVFAudio
 
 @MainActor
 class LiveWorkoutViewModel: ObservableObject {
@@ -44,6 +45,7 @@ class LiveWorkoutViewModel: ObservableObject {
     private var restTimer: Timer?
     private var workoutStartTime: Date?
     private var cancellables = Set<AnyCancellable>()
+    private var saveWorkTask: Task<Void, Never>?
     
     // Constants
     private let initialRestSeconds = 300 // 5 min warmup
@@ -317,7 +319,9 @@ class LiveWorkoutViewModel: ObservableObject {
                 logError("Failed to end Fitness tracking", error: error, category: "live-workout")
             }
             
-            // Show summary before stopping workout
+            // Stop timers and show summary
+            stopWorkoutTimer()
+            stopRest()
             completedWorkout = workout
             showWorkoutSummary = true
         } catch {
@@ -328,7 +332,10 @@ class LiveWorkoutViewModel: ObservableObject {
     func dismissWorkoutSummary() {
         showWorkoutSummary = false
         completedWorkout = nil
-        stopWorkout()
+        activeWorkout = nil
+        isWorkoutActive = false
+        workoutStartTime = nil
+        clearActiveWorkoutState()
     }
     
     // MARK: - Timer Management
@@ -397,8 +404,11 @@ class LiveWorkoutViewModel: ObservableObject {
     }
     
     private func playRestWarningBeeps() {
+        // Configure audio session to play even on silent
+        configureAudioSession()
+        
         // Play beep beep at 5 seconds remaining
-        let beepPattern: [TimeInterval] = [0, 0.15]
+        let beepPattern: [TimeInterval] = [0, 0.25]
         
         for delay in beepPattern {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -408,13 +418,26 @@ class LiveWorkoutViewModel: ObservableObject {
     }
     
     private func playRestCompleteBeeps() {
+        // Configure audio session to play even on silent
+        configureAudioSession()
+        
         // Play beep beep beep - pause - beep beep beep pattern
-        let beepPattern: [TimeInterval] = [0, 0.15, 0.3, 0.7, 0.85, 1.0]
+        let beepPattern: [TimeInterval] = [0, 0.25, 0.5, 0.9, 1.15, 1.4]
         
         for (index, delay) in beepPattern.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 AudioServicesPlaySystemSound(1057) // System beep sound
             }
+        }
+    }
+    
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+        } catch {
+            logError("Failed to configure audio session", error: error, category: "live-workout")
         }
     }
     
@@ -435,8 +458,13 @@ class LiveWorkoutViewModel: ObservableObject {
     
     private func saveActiveWorkoutState() {
         guard let workout = activeWorkout else { return }
-        // Save to UserDefaults for session persistence
-        if let encoded = try? JSONEncoder().encode(workout) {
+        
+        // Cancel previous save task to debounce
+        saveWorkTask?.cancel()
+        
+        // Save on background thread to avoid blocking UI
+        saveWorkTask = Task.detached(priority: .background) {
+            guard let encoded = try? JSONEncoder().encode(workout) else { return }
             UserDefaults.standard.set(encoded, forKey: "activeWorkout")
         }
     }

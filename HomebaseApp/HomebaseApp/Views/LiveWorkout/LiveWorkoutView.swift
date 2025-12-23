@@ -43,8 +43,6 @@ struct LiveWorkoutView: View {
             }
             .navigationTitle("Live Workout")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(red: 0.85, green: 0.80, blue: 0.95), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
         }
     }
 }

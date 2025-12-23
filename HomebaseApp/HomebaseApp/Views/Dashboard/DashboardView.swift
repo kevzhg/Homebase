@@ -15,6 +15,9 @@ struct DashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Connection status indicator
+                    connectionStatusBanner
+                    
                     // Today's Summary Cards
                     todaySummarySection
                     
@@ -31,6 +34,26 @@ struct DashboardView: View {
                 // Pull to refresh (listeners already handle updates)
             }
         }
+    }
+    
+    // MARK: - Connection Status
+    
+    private var connectionStatusBanner: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(firebaseService.isOnline ? Color.green : Color.orange)
+                .frame(width: 8, height: 8)
+            
+            Text(firebaseService.isOnline ? "Online" : "Offline")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
     }
     
     // MARK: - Today's Summary

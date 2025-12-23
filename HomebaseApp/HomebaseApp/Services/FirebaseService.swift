@@ -24,6 +24,7 @@ class FirebaseService: ObservableObject {
     
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var isOnline = true
     
     // Firestore reference
     // Option 1: Use default database (recommended)
@@ -45,15 +46,11 @@ class FirebaseService: ObservableObject {
     private var weightListener: ListenerRegistration?
     private var programsListener: ListenerRegistration?
     private var exercisesListener: ListenerRegistration?
+    private var connectionListener: ListenerRegistration?
     
     private init() {
         logInfo("🔥 Initializing FirebaseService", category: "firebase")
-        
-        // Configure offline persistence (enabled by default in newer Firebase versions)
-        let settings = FirestoreSettings()
-        settings.cacheSettings = PersistentCacheSettings()
-        db.settings = settings
-        
+        startConnectionMonitoring()
         logSuccess("FirebaseService initialized", category: "firebase")
     }
     
@@ -74,6 +71,26 @@ class FirebaseService: ObservableObject {
         weightListener?.remove()
         programsListener?.remove()
         exercisesListener?.remove()
+        connectionListener?.remove()
+    }
+    
+    // MARK: - Connection Monitoring
+    
+    private func startConnectionMonitoring() {
+        // Monitor network reachability by listening to any collection
+        // If we get snapshot updates, we're online
+        connectionListener = db.collection("users").document(userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error as NSError? {
+                    // Error code 14 = UNAVAILABLE (offline)
+                    self.isOnline = error.code != 14
+                } else {
+                    // Successfully received snapshot = online
+                    self.isOnline = true
+                }
+            }
     }
     
     // MARK: - Training Operations
